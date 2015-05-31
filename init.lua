@@ -1,10 +1,11 @@
-nks = {}
-GEN_LIMIT = 30
+automata = {}
+GEN_LIMIT = 30 --change the number of iterations allowed:
 DEAD_CELL = "default:dirt" -- can be set to "air"
-FINAL_CELL = DEAD_CELL -- sometimes nice to do "default:mese", otherwise MUST be set to DEAD_CELL
+FINAL_CELL = "default:mese" -- sometimes nice to do "default:mese", otherwise MUST be set to DEAD_CELL
 VERT = 1 -- could be set to -1 for downward, 1 for upward or 0 for flat
 CHAT_DEBUG = false
 
+-- default rules and explanation of rules table format
 local rules = {
 	corners = false, -- defaults to 4 neighbors only, true means 8 neighbors
 	--the following rules are either false for disabled, true for any, or a table with specific values
@@ -15,8 +16,8 @@ local rules = {
 
 -- need a queue so that grown nodes don't get immediately also assessed for growth,
 -- automata need to be assessed a layer at a time, not according to whatever scan order is used by MT
-nks.block_queue = {}
-nks.check_list = {}
+automata.block_queue = {}
+automata.check_list = {}
 
 --rulecheck, simple in_array type function
 local function rule_check(value, list)
@@ -47,9 +48,9 @@ local function enqueue(pos, nodename, gen)
 		local pos = minetest.pos_to_string(pos)
 		if FINAL_CELL ~= nil and GEN_LIMIT == gen then nodename = FINAL_CELL end
 		--checks to see if the block is already enqueued to change
-		if nks.block_queue[pos] == nil then
-			if nodename ~= "air" then nks.block_queue[pos] = {nodename = nodename, gen = gen}
-			else nks.block_queue[pos] = {nodename = nodename, gen = nil}
+		if automata.block_queue[pos] == nil then
+			if nodename ~= "air" then automata.block_queue[pos] = {nodename = nodename, gen = gen}
+			else automata.block_queue[pos] = {nodename = nodename, gen = nil}
 			end
 			if CHAT_DEBUG then minetest.chat_send_all(nodename.." node enqueued at "..pos) end
 		end
@@ -57,18 +58,18 @@ local function enqueue(pos, nodename, gen)
 end
 
 -- function to execute the queued commands
-function nks:dequeue()
-	--if #nks.block_queue > 0 then
+function automata:dequeue()
+	--if #automata.block_queue > 0 then
 		--loop through each entry, keyed by pos with value opts.nodename, opts.gen
-		for k,v in pairs(nks.block_queue) do
+		for k,v in pairs(automata.block_queue) do
 			local pos = minetest.string_to_pos(k)
 			minetest.set_node(pos, {name = v.nodename})
 			set_gen(pos,v.gen)
 			if CHAT_DEBUG then minetest.chat_send_all("set a gen "..v.gen.." "..v.nodename.." at ("..k..")") end
 			-- remove the just executed row
-			nks.block_queue[k] = nil
+			automata.block_queue[k] = nil
 			-- remove the check_list entry as well so the space can be alive again for other gens/nodes
-			nks.check_list[k] = nil -- also necessary for VERT = 0 mode
+			automata.check_list[k] = nil -- also necessary for VERT = 0 mode
 		end
 	--end
 end
@@ -79,9 +80,9 @@ minetest.register_globalstep(function(dtime)
 	timer = timer + dtime;
 	if timer >= 5 then
 		-- process the queue
-		nks:dequeue()
+		automata:dequeue()
 		--reset the check_list need to find a better place to flush this... some kind of gen check
-		--nks.check_list = {}
+		--automata.check_list = {}
 		timer = 0
 	end
 end)
@@ -126,7 +127,7 @@ local function count_same_neighbors(pos, nodename, corners)
 		end
 	end
 	-- mark the node as checked (@todo: mark by which gen and node type)
-	nks.check_list[minetest.pos_to_string(pos)] = true
+	automata.check_list[minetest.pos_to_string(pos)] = true
 	--minetest.log("action", "checked " .. minetest.pos_to_string(pos))
 	return c
 end
@@ -135,7 +136,7 @@ end
 local function grow(pos, node, rules)
 	
 	--first off, have we inspected this active cell yet? if so bail on grow()
-	if nks.check_list[minetest.pos_to_string(pos)] ~= nil then 
+	if automata.check_list[minetest.pos_to_string(pos)] ~= nil then 
 		return false 
 	end
 	
@@ -144,9 +145,9 @@ local function grow(pos, node, rules)
 	
 	--check to see if we automatically perpetuate self
 	if rules.survive ~= false and type(rules.survive) ~= "table" then 
-		minetest.chat_send_all("straightup") --REMOVE
+		--minetest.chat_send_all("straightup") --REMOVE
 		enqueue({x=pos.x, y=pos.y+VERT, z=pos.z}, node.name, gen+1)
-		nks.check_list[minetest.pos_to_string(pos)] = true -- mark this node as checked
+		automata.check_list[minetest.pos_to_string(pos)] = true -- mark this node as checked
 		--enqueue this cell to turn off unless VERT = 0
 		if VERT ~= 0 then
 			enqueue(pos, DEAD_CELL, gen)
@@ -193,16 +194,16 @@ local function grow(pos, node, rules)
 			-- birth=true means any amount of neighbors so we can just set it since this is a neighbor
 			for k,v in pairs(inactive_neighbors) do
 				--minetest.chat_send_all(k.." : " ..minetest.pos_to_string(v))
-				if nks.check_list[minetest.pos_to_string(v)] == nil then
+				if automata.check_list[minetest.pos_to_string(v)] == nil then
 					enqueue({x=v.x,y=v.y+VERT,z=v.z}, node.name, gen+1)
-					nks.check_list[minetest.pos_to_string(v)] = true
+					automata.check_list[minetest.pos_to_string(v)] = true
 				end
 			end
 		else
 			--if specific neighbor counts are listed in the rules we have to count neighbors and then apply a rule check
 			for k,v in pairs(inactive_neighbors) do
 				--minetest.chat_send_all(k.." : " ..minetest.pos_to_string(v))
-				if nks.check_list[minetest.pos_to_string(v)] == nil then
+				if automata.check_list[minetest.pos_to_string(v)] == nil then
 					local cn = count_same_neighbors(v, node.name, rules.corners) --will mark the node as checked
 					if rule_check(cn, rules.birth) then
 						enqueue({x=v.x,y=v.y+VERT,z=v.z}, node.name, gen+1)
@@ -214,7 +215,7 @@ local function grow(pos, node, rules)
 end
 
 --dead_cells are for done layers
-minetest.register_node("nks:dead_cell", {
+minetest.register_node("automata:dead_cell", {
 	description = "Dead Cell",
 	tiles = {"dead.png"},
 	light_source = 2,
@@ -222,17 +223,17 @@ minetest.register_node("nks:dead_cell", {
 })
 
 
--- NKS rule 1022 node
-minetest.register_node("nks:rule_1022", {
-	description = "NKS_1022",
+-- automata rule 1022 node
+minetest.register_node("automata:nks1022", {
+	description = "nks code 1022",
 	tiles = {"nks1022.png"},
 	light_source = 5,
 	groups = {oddly_breakable_by_hand=1},
 })
 
--- NKS rule 1022 action
+-- automata rule 1022 action
 minetest.register_abm({
-	nodenames = {"nks:rule_1022"},
+	nodenames = {"automata:nks1022"},
 	neighbors = {"air"}, --won't grow underground or underwater . . .
 	interval = 4,
 	chance = 1,
@@ -245,39 +246,39 @@ minetest.register_abm({
 	end,
 })
 
--- NKS rule 942 node
-minetest.register_node("nks:rule_942", {
-	description = "NKS_0942",
+-- automata rule 942 node
+minetest.register_node("automata:nks942", {
+	description = "nks code 942",
 	tiles = {"nks942.png"},
 	light_source = 5,
 	groups = {oddly_breakable_by_hand=1},
 })
 
--- NKS rule 942 action
+-- automata rule 942 action
 minetest.register_abm({
-	nodenames = {"nks:rule_942"},
+	nodenames = {"automata:nks942"},
 	neighbors = {"air"}, --won't grow underground or underwater . . .
 	interval = 4,
 	chance = 1,
 	action = function(pos, node)
 		rules.corners  = false
-		rules.surivive = true
+		rules.survive = true
 		rules.birth    = {1,4}
 		
 		grow(pos, node, rules)
 	end,
 })
--- NKS rule Conway node
-minetest.register_node("nks:conway", {
+-- automata rule Conway node
+minetest.register_node("automata:conway", {
 	description = "Game of Life",
 	tiles = {"conway.png"},
 	light_source = 5,
 	groups = {oddly_breakable_by_hand=1},
 })
 
--- NKS rule 942 action
+-- automata rule 942 action
 minetest.register_abm({
-	nodenames = {"nks:conway"},
+	nodenames = {"automata:conway"},
 	neighbors = {"air"}, --won't grow underground or underwater . . .
 	interval = 4,
 	chance = 1,
