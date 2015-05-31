@@ -25,6 +25,7 @@ VERT = 1 -- could be set to -1 for downward, 1 for upward or 0 for flat (Flat is
 5. instead of multiple new automata nodes for each new rule, have a single node with a right-click action which sets the rules in a form
 6. trigger the node with a punch rather than it starting automatically
 7. improve the queue system, uniquely identify each automata as it grows (improve collisions)
+8. add different materials in order to emulate a 3D system of interacting material cells such as in the android game PixieDust: https://play.google.com/store/apps/details?id=org.neotech.app.pixiedust&hl=en
 
 ## screenshots
 
