@@ -3,7 +3,51 @@ GEN_LIMIT = 20 --change the number of iterations allowed:
 DEAD_CELL = "default:dirt" -- can be set to "air"
 FINAL_CELL = "default:dirt" -- sometimes nice to do "default:mese", cannot be false
 VERT = 1 -- could be set to -1 for downward, 1 for upward or 0 for flat
+NORTH = 0
+EAST = 0
 CHAT_DEBUG = false
+
+-- save and restore stuff taken from travelnet mod
+-- TODO: save and restore ought to be library functions and not implemented in each individual mod!
+-- called whenever a node is added on the fly
+
+automata.save_node = function(nodename)
+	
+	local data=minetest.registered_nodes[nodename]
+	if data then
+		row = minetest.serialize({nodename = nodename, data = data})
+		local path = minetest.get_worldpath().."/automata.data";
+		local file = io.open( path, "a" );
+		if( file ) then
+			file:write( data );
+			file:close();
+		else
+			minetest.log("error", "Savefile '"..tostring( path ).."' could not be written.");
+		end
+	else
+		--if node not found something is wonky
+		minetest.log("error", "tried to persist node "..nodename.." but couldn't find that node type")
+		return false
+	end
+end
+
+--called on mod load (see end of this file) to reload any node types created on the fly by activating a programmable automata node
+automata.restore_data = function()
+
+	local path = minetest.get_worldpath().."/automata.data";
+	
+	local file = io.open( path, "r" );
+	if( file ) then
+		--register each node
+		for line in file:lines() do
+			local row = minetest.deserialize(line)
+			minetest.register_node(row[name],row[data])
+		end
+		file:close();
+	else
+		minetest.log("error", "Savefile '"..tostring( path ).."' not found.");
+	end
+end
 
 -- function to convert integer to binary string
 local function toBits(num, bits)
@@ -17,11 +61,11 @@ local function toBits(num, bits)
     return t
 end
 
-local function nks_rule_convert(node)
+local function nks_rule_convert(name)
 	local rules = {}
-	
+
 	local bits = 0
-	local corners = string.sub(node.name, 10, 11) --very important that the nodename starts with "automata:9n" or "automata:5n"
+	local corners = string.sub(name, 10, 11) --very important that the nodename starts with "automata:9n" or "automata:5n"
 	-- the 5 or 9 neighbor type
 	if corners == "5n" then
 		bits = 10
@@ -37,11 +81,31 @@ local function nks_rule_convert(node)
 	end
 	
 	-- get the integer code from the nodename
-	local code = string.sub(node.name, 12) --very important that the nodename continues with a code only, no trailing chars
+	local code = string.sub(name, 12) --very important that the nodename continues with a code only, no trailing chars
+	
+	-- todo catch error from tonumber
+	-- also we know that a 5n rule can be no larger than 1023, though a 9n rule can be less than 1024
+	code = tonumber(code)
+	--minetest.debug("action", "nodename= "..name)
+	if (bits == 10 and code > 1023) or (bits == 18 and code > 262143) then 
+		minetest.chat_send_all("improperly formatted code -- must be in the format 5n942")
+		return false 
+	end
 	
 	-- convert the integer code to a bigendian binary table
-	local bintable = toBits(tonumber(code), bits)
+	local bintable = toBits(code, bits)
 	--minetest.log("action", table.concat(bintable))
+	
+	-- test for survival rule 0, which cannot be implemented in this mod
+	if bintable[1] == 1 then
+		minetest.chat_send_all("odd-numbered codes are not supported")
+		return false
+	end
+	-- test for single-node growth
+	if bintable[2] == 0 then
+		minetest.chat_send_all("please note, this code will not grow alone")
+	end
+	
 	rules.survive = {}
 	local i = 0
 	-- convert the even numbered bits into the survival rules
@@ -231,13 +295,13 @@ local function grow(pos, node, rules)
 		end
 	end	
 end
-
+--[[ THESE NODES ARE NO LONGER REGISTERED BY DEFAULT, PROGRAMMABLE NODES NOW USED
 -- automata rule 1022 node
 minetest.register_node("automata:5n1022", {
 	description = "5 Neighbor Code 1022",
 	tiles = {"nks1022.png"},
 	light_source = 5,
-	groups = {oddly_breakable_by_hand=1},
+	groups = {live_automata = 1, oddly_breakable_by_hand=1},
 })
 
 -- automata rule 942 node
@@ -245,31 +309,36 @@ minetest.register_node("automata:5n942", {
 	description = "5 Neighbor Code 942",
 	tiles = {"nks942.png"},
 	light_source = 5,
-	groups = {oddly_breakable_by_hand=1},
+	groups = {live_automata = 1, oddly_breakable_by_hand=1},
 })
+-- same as 942 with no survival
+minetest.register_node("automata:5n260", {
+	description = "5 Neighbor Code 260",
+	tiles = {"conway.png"},
+	light_source = 5,
+	groups = {live_automata = 1, oddly_breakable_by_hand=1},
+})
+--]]
 -- automata rule Conway node
 minetest.register_node("automata:9n224", {
 	description = "Conway's Game of Life",
 	tiles = {"conway.png"},
 	light_source = 5,
-	groups = {oddly_breakable_by_hand=1},
+	groups = {	live_automata = 1, --abm applied to this group only
+				oddly_breakable_by_hand=1,
+				not_in_creative_inventory = 1 --only programmable nodes appear in the inventory
+	},
 })
 minetest.register_alias("automata:conway", "automata:9n224")
--- playing
-minetest.register_node("automata:9n424", {
-	description = "9 Neighbor Code 424",
-	tiles = {"conway.png"},
-	light_source = 5,
-	groups = {oddly_breakable_by_hand=1},
-})
+
 -- automata generic growth action
 minetest.register_abm({
-	nodenames = {"automata:5n942", "automata:5n1022", "automata:9n224", "automata:9n424"},
+	nodenames = {"group:live_automata"},
 	neighbors = {"air"}, --won't grow underground or underwater . . .
 	interval = 4,
 	chance = 1,
 	action = function(pos, node)
-		local rules = nks_rule_convert(node)
+		local rules = nks_rule_convert(node.name)
 		if rules ~= false then
 			grow(pos, node, rules)
 		else
@@ -277,3 +346,63 @@ minetest.register_abm({
 		end
 	end,
 })
+-- new block that requires punching to activate and
+minetest.register_node("automata:programmable", {
+	description = "Programmable Automata",
+	tiles = {"conway.png"},
+	light_source = 5,
+	groups = {oddly_breakable_by_hand=1},
+	
+	on_construct = function(pos)
+		--local n = minetest.get_node(pos)
+		local meta = minetest.get_meta(pos)
+		meta:set_string("formspec", "field[text;;${text}]")
+		meta:set_string("infotext", "\"\"")
+	end,
+	on_receive_fields = function(pos, formname, fields, sender)
+		--print("Sign at "..minetest.pos_to_string(pos).." got "..dump(fields))
+		if minetest.is_protected(pos, sender:get_player_name()) then
+			minetest.record_protection_violation(pos, sender:get_player_name())
+			return
+		end
+		local meta = minetest.get_meta(pos)
+		if not fields.text then return end
+		minetest.log("action", (sender:get_player_name() or "").." wrote \""..fields.text..
+				"\" to sign at "..minetest.pos_to_string(pos))
+		meta:set_string("text", fields.text)
+		meta:set_string("infotext", '"'..fields.text..'"')
+		
+		local nodename = "automata:"..fields.text
+		--see if the entered data is a valid NKS rule
+		local validates = nks_rule_convert(nodename)
+		if validates == false then return false end
+		
+		--check to see if this node is already a registered node
+		if not minetest.registered_nodes[nodename] then
+			--if not register the node ON THE FLY!
+			minetest.register_node(nodename, {
+				description = "Automata code "..fields.text,
+				tiles = {"conway.png"},
+				light_source = 5,
+				groups = {	live_automata = 1, --abm applied to this group only
+							oddly_breakable_by_hand=1,
+							not_in_creative_inventory = 1 --only programmable nodes appear in the inventory
+				},
+			})
+			--and add it to the automata node file
+			if not automata:save_node(nodename) then
+				minetest.chat_send_all("saving the "..nodename..fields.text.." to persistence file failed")
+			end
+			minetest.chat_send_all(nodename.." has been registered as a new automata type in this world")
+		else
+			minetest.chat_send_all(nodename.." is already a registered automata type in this world")
+		end
+		
+		--convert this block to the entered type
+		minetest.set_node(pos, {name=nodename})
+		
+	end,
+})
+
+-- upon server start, read the savefile
+automata.restore_data();
