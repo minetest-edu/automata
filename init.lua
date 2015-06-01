@@ -5,15 +5,6 @@ FINAL_CELL = "default:dirt" -- sometimes nice to do "default:mese", cannot be fa
 VERT = 1 -- could be set to -1 for downward, 1 for upward or 0 for flat
 CHAT_DEBUG = false
 
--- default rules and explanation of rules table format
-local rules = {
-	corners = false, -- defaults to 4 neighbors only, true means 8 neighbors
-	--the following rules are either false for disabled, true for any, or a table with specific values
-	survive = true, -- number of neighbors required to perpetuate the active cell, survive true implues death false
-					-- the vacancies in the survive list imply the death list, also survive false implies death true
-	birth   = false, -- number of neighbors required for birth from an empty cell
-}
-
 -- function to convert integer to binary string
 local function toBits(num, bits)
     -- returns a table of bits, most significant first.
@@ -27,6 +18,7 @@ local function toBits(num, bits)
 end
 
 local function nks_rule_convert(node)
+	local rules = {}
 	
 	local bits = 0
 	local corners = string.sub(node.name, 10, 11) --very important that the nodename starts with "automata:9n" or "automata:5n"
@@ -49,7 +41,7 @@ local function nks_rule_convert(node)
 	
 	-- convert the integer code to a bigendian binary table
 	local bintable = toBits(tonumber(code), bits)
-	minetest.log("action", table.concat(bintable))
+	--minetest.log("action", table.concat(bintable))
 	rules.survive = {}
 	local i = 0
 	-- convert the even numbered bits into the survival rules
@@ -66,7 +58,7 @@ local function nks_rule_convert(node)
 	end
 	--pass the binary table to the rules table to transition to this form of checking in rule_check
 	rules.binary = bintable
-	return true
+	return rules
 end
 
 -- need a queue so that grown nodes don't get immediately also assessed for growth,
@@ -276,10 +268,11 @@ minetest.register_abm({
 	interval = 4,
 	chance = 1,
 	action = function(pos, node)
-		if nks_rule_convert(node) then --experimental
+		local rules = nks_rule_convert(node)
+		if rules ~= false then
 			grow(pos, node, rules)
 		else
-			minetest.log("error", "rule conversion failed")
+			minetest.log("error", "rule extrapolation from node name failed")
 		end
 	end,
 })
