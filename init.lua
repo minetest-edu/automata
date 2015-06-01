@@ -1,7 +1,7 @@
 automata = {}
-GEN_LIMIT = 30 --change the number of iterations allowed:
+GEN_LIMIT = 20 --change the number of iterations allowed:
 DEAD_CELL = "default:dirt" -- can be set to "air"
-FINAL_CELL = "default:mese" -- sometimes nice to do "default:mese", otherwise MUST be set to DEAD_CELL
+FINAL_CELL = "default:dirt" -- sometimes nice to do "default:mese", cannot be false
 VERT = 1 -- could be set to -1 for downward, 1 for upward or 0 for flat
 CHAT_DEBUG = false
 
@@ -200,15 +200,7 @@ local function grow(pos, node, rules)
 	local gen = get_gen(pos)
 	
 	--check to see if we automatically perpetuate self
-	if rules.survive ~= false and type(rules.survive) ~= "table" then 
-		--minetest.chat_send_all("straightup") --REMOVE
-		enqueue({x=pos.x, y=pos.y+VERT, z=pos.z}, node.name, gen+1)
-		automata.check_list[minetest.pos_to_string(pos)] = true -- mark this node as checked
-		--enqueue this cell to turn off unless VERT = 0
-		if VERT ~= 0 then
-			enqueue(pos, DEAD_CELL, gen)
-		end
-	elseif type(rules.survive) == "table" then 
+	if #rules.survive > 0 then 
 		local active_count = count_same_neighbors(pos, node.name, rules.corners) -- this will mark node as checked
 		if rule_check(active_count, rules.survive) then
 			enqueue({x=pos.x, y=pos.y+VERT, z=pos.z}, node.name, gen+1)
@@ -228,78 +220,32 @@ local function grow(pos, node, rules)
 				
 			end
 		end
-	elseif rules.survive == false then
-		--death implied, just as above where survival check fails @todo remove this duplication of code
-		-- we don't perpetuate but enqueue this cell to turn off if VERT = 0
-		if VERT ~= 0 then
-			enqueue(pos, DEAD_CELL, gen)
-		else
-			--if VERT = 0 then we have to explicitly make a hole with air,
-			-- @todo, record original node type for resetting, which will allow CA to pass through materials
-			enqueue(pos, "air", gen)
-			
-		end
 	end
 	
 	--if BIRTH is enabled, we use this opportunity to check all non-active nieghbors
 	--by the nature of this scan, we know there is at least one neighbor, so birth=true implies > 0
-	if rules.birth ~= false then
+	if #rules.birth > 0 then
+		--load the candidate cells for birthing
 		local inactive_neighbors = list_inactive_neighbors(pos, node.name, rules.corners)
-		if type(rules.birth) ~= "table" then
-			--minetest.chat_send_all(type(rules.birth)) --REMOVE
-			-- birth=true means any amount of neighbors so we can just set it since this is a neighbor
-			for k,v in pairs(inactive_neighbors) do
-				--minetest.chat_send_all(k.." : " ..minetest.pos_to_string(v))
-				if automata.check_list[minetest.pos_to_string(v)] == nil then
+		--if specific neighbor counts are listed in the rules we have to count neighbors and then apply a rule check
+		for k,v in pairs(inactive_neighbors) do
+			--minetest.chat_send_all(k.." : " ..minetest.pos_to_string(v))
+			if automata.check_list[minetest.pos_to_string(v)] == nil then
+				local cn = count_same_neighbors(v, node.name, rules.corners) --will mark the node as checked
+				if rule_check(cn, rules.birth) then
 					enqueue({x=v.x,y=v.y+VERT,z=v.z}, node.name, gen+1)
-					automata.check_list[minetest.pos_to_string(v)] = true
-				end
-			end
-		else
-			--if specific neighbor counts are listed in the rules we have to count neighbors and then apply a rule check
-			for k,v in pairs(inactive_neighbors) do
-				--minetest.chat_send_all(k.." : " ..minetest.pos_to_string(v))
-				if automata.check_list[minetest.pos_to_string(v)] == nil then
-					local cn = count_same_neighbors(v, node.name, rules.corners) --will mark the node as checked
-					if rule_check(cn, rules.birth) then
-						enqueue({x=v.x,y=v.y+VERT,z=v.z}, node.name, gen+1)
-					end
 				end
 			end
 		end
 	end	
 end
 
---dead_cells are for done layers
-minetest.register_node("automata:dead_cell", {
-	description = "Dead Cell",
-	tiles = {"dead.png"},
-	light_source = 2,
-	groups = {oddly_breakable_by_hand=1},
-})
-
-
 -- automata rule 1022 node
-minetest.register_node("automata:nks1022", {
-	description = "nks code 1022",
+minetest.register_node("automata:5n1022", {
+	description = "5 Neighbor Code 1022",
 	tiles = {"nks1022.png"},
 	light_source = 5,
 	groups = {oddly_breakable_by_hand=1},
-})
-
--- automata rule 1022 action
-minetest.register_abm({
-	nodenames = {"automata:nks1022"},
-	neighbors = {"air"}, --won't grow underground or underwater . . .
-	interval = 4,
-	chance = 1,
-	action = function(pos, node)
-		rules.corners  = false
-		rules.surivive = true
-		rules.birth    = true
-		
-		grow(pos, node, rules)
-	end,
 })
 
 -- automata rule 942 node
@@ -309,10 +255,23 @@ minetest.register_node("automata:5n942", {
 	light_source = 5,
 	groups = {oddly_breakable_by_hand=1},
 })
-
--- automata rule 942 action
+-- automata rule Conway node
+minetest.register_node("automata:9n224", {
+	description = "Conway's Game of Life",
+	tiles = {"conway.png"},
+	light_source = 5,
+	groups = {oddly_breakable_by_hand=1},
+})
+-- playing
+minetest.register_node("automata:9n424", {
+	description = "9 Neighbor Code 424",
+	tiles = {"conway.png"},
+	light_source = 5,
+	groups = {oddly_breakable_by_hand=1},
+})
+-- automata generic growth action
 minetest.register_abm({
-	nodenames = {"automata:5n942"},
+	nodenames = {"automata:5n942", "automata:5n1022", "automata:9n224", "automata:9n424"},
 	neighbors = {"air"}, --won't grow underground or underwater . . .
 	interval = 4,
 	chance = 1,
@@ -322,26 +281,5 @@ minetest.register_abm({
 		else
 			minetest.log("error", "rule conversion failed")
 		end
-	end,
-})
--- automata rule Conway node
-minetest.register_node("automata:conway", {
-	description = "Game of Life",
-	tiles = {"conway.png"},
-	light_source = 5,
-	groups = {oddly_breakable_by_hand=1},
-})
-
--- automata rule 942 action
-minetest.register_abm({
-	nodenames = {"automata:conway"},
-	neighbors = {"air"}, --won't grow underground or underwater . . .
-	interval = 4,
-	chance = 1,
-	action = function(pos, node)
-		rules.corners = true
-		rules.survive = {2, 3}
-		rules.birth   = {3}
-		grow(pos, node, rules)
 	end,
 })
