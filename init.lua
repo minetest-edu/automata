@@ -14,9 +14,65 @@ local rules = {
 	birth   = false, -- number of neighbors required for birth from an empty cell
 }
 
+-- function to convert integer to binary string
+local function toBits(num, bits)
+    -- returns a table of bits, most significant first.
+    bits = bits or select(2,math.frexp(num))
+    local t={} -- will contain the bits        
+    for b=1,bits,1 do --left to right binary table
+        t[b]=math.fmod(num,2)
+        num=(num-t[b])/2
+    end
+    return t
+end
+
+local function nks_rule_convert(node)
+	
+	local bits = 0
+	local corners = string.sub(node.name, 10, 11) --very important that the nodename starts with "automata:9n" or "automata:5n"
+	-- the 5 or 9 neighbor type
+	if corners == "5n" then
+		bits = 10
+		rules.corners = false
+		--minetest.log("action", corners)
+	elseif corners == "9n" then
+		bits = 18
+		rules.corners = true
+		--minetest.log("action", corners)
+	else 
+		minetest.log("error", "node name not in correct format for nks_rule_convert()")
+		return false
+	end
+	
+	-- get the integer code from the nodename
+	local code = string.sub(node.name, 12) --very important that the nodename continues with a code only, no trailing chars
+	
+	-- convert the integer code to a bigendian binary table
+	local bintable = toBits(tonumber(code), bits)
+	minetest.log("action", table.concat(bintable))
+	rules.survive = {}
+	local i = 0
+	-- convert the even numbered bits into the survival rules
+	for b=2,bits,2 do
+		if bintable[b] == 1 then table.insert(rules.survive, i) end
+		i = i+1
+	end
+	rules.birth = {}
+	local i = 1
+	-- convert the odd numbered bits into the birth rules, skipping the first one (not implemented in this mod)
+	for b=3,bits,2 do
+		if bintable[b] == 1 then table.insert(rules.birth, i) end
+		i = i+1
+	end
+	--pass the binary table to the rules table to transition to this form of checking in rule_check
+	rules.binary = bintable
+	return true
+end
+
 -- need a queue so that grown nodes don't get immediately also assessed for growth,
 -- automata need to be assessed a layer at a time, not according to whatever scan order is used by MT
 automata.block_queue = {}
+--need to prevent rescanning of same blocks
 automata.check_list = {}
 
 --rulecheck, simple in_array type function
@@ -247,8 +303,8 @@ minetest.register_abm({
 })
 
 -- automata rule 942 node
-minetest.register_node("automata:nks942", {
-	description = "nks code 942",
+minetest.register_node("automata:5n942", {
+	description = "5 Neighbor Code 942",
 	tiles = {"nks942.png"},
 	light_source = 5,
 	groups = {oddly_breakable_by_hand=1},
@@ -256,16 +312,16 @@ minetest.register_node("automata:nks942", {
 
 -- automata rule 942 action
 minetest.register_abm({
-	nodenames = {"automata:nks942"},
+	nodenames = {"automata:5n942"},
 	neighbors = {"air"}, --won't grow underground or underwater . . .
 	interval = 4,
 	chance = 1,
 	action = function(pos, node)
-		rules.corners  = false
-		rules.survive = true
-		rules.birth    = {1,4}
-		
-		grow(pos, node, rules)
+		if nks_rule_convert(node) then --experimental
+			grow(pos, node, rules)
+		else
+			minetest.log("error", "rule conversion failed")
+		end
 	end,
 })
 -- automata rule Conway node
