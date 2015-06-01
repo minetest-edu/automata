@@ -254,6 +254,7 @@ minetest.register_node("automata:9n224", {
 	light_source = 5,
 	groups = {oddly_breakable_by_hand=1},
 })
+minetest.register_alias("automata:conway", "automata:9n224")
 -- playing
 minetest.register_node("automata:9n424", {
 	description = "9 Neighbor Code 424",
