@@ -2,8 +2,8 @@
 ### A minetest mod for growing various cellular automata, including conway's game of life...
 
 This mod adds two new blocks (at time of writing):
-1. Programmable block
-
+1. Programmable block (good for automata that will grow from a single block)
+2. Conway's Game of Life Block (buggy but workable)
 
 ## Installation
 like any minetest mod just install the mod as "automata" in your mods folder
