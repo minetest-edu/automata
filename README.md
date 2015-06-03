@@ -50,7 +50,7 @@ code 5n942 growing up 30 iterations
 
 create a glider with worldedit //load glider (for now)
 
-![screenshot_1284125787](https://cloud.githubusercontent.com/assets/12679496/7900635/1cdb513e-0721-11e5-8a6e-25d3ad439e8c.png)
+![screenshot_1535971080](https://cloud.githubusercontent.com/assets/12679496/7951706/42327d92-0968-11e5-8043-f345c0b78491.png)
 
 glider growing
 
