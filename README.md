@@ -31,14 +31,16 @@ For the purposes of experimentation another node-type, automata:conway is includ
 - figure out how to import blocks from worldedit with metadata filled out.
 - figure out a triggering mechanism for groups of blocks simultaneously (applies to 1D and 3D automata as well).
 - set up a library of schems or deploying Game of Life starting states and critters, as per: http://www.radicaleye.com/lifepage/picgloss/picgloss.html
+- CAN probably solve all of the above by using a form not stored in metadata, passed to player_on_receive_fields, and handling activation differently
+
 - improve efficiency, currently counting neighbors, might be a more efficient method using minetest api calls or voxelmanip
 - find a way for the automata pattern not to break when the player gets too far from part of it
+
 - add 3D automata, which just amounts to more neighbors and higher rule codes.
 - add rules for 2D automata which check for specific neighbor positions (non-totalistic)
 - add 1D automata (Elementary Automata)
 - add support of Moore and von Neumann neighborhoods (diamonds) of more than 1 unit distance and 3D implementations
 - add an anti-cell which could be used to implement 0-neighbor birth rules within defined game fields/volumes
-- 
 
 ## screenshots (may be out of date but give you an idea)
 Programmable block form:
@@ -76,6 +78,6 @@ code 5n942 growing down, from below
 
 ![screenshot_1283277162](https://cloud.githubusercontent.com/assets/12679496/7900633/fff075a4-0720-11e5-8b5c-3d4b90e9039c.png)
 
-random collided growths (growth becomes irregular when you leave the area and return) with the "final" field set to default:mese
+a 5n942 growing in the plane of x -- again attached to a node placed in space by worldedit
 
-![screenshot_1284125787](https://cloud.githubusercontent.com/assets/12679496/7900635/1cdb513e-0721-11e5-8a6e-25d3ad439e8c.png)
+![screenshot_1537130594](https://cloud.githubusercontent.com/assets/12679496/7951910/9cb06a3e-096a-11e5-9e9f-bfbb201f3fef.png)
