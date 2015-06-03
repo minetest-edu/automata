@@ -41,14 +41,16 @@ For the purposes of experimentation another node-type, automata:conway is includ
 - 
 
 ## screenshots (may be out of date but give you an idea)
+Programmable block form:
+![screenshot_1536075142](https://cloud.githubusercontent.com/assets/12679496/7951709/423fb4e4-0968-11e5-881f-7a7f3cec1d73.png)
 
-code 942 growing up 30 iterations
+code 5n942 growing up 30 iterations
 
 ![screenshot_1282617618](https://cloud.githubusercontent.com/assets/12679496/7900620/6c8abb4e-0720-11e5-98f0-a99914cabc81.png)
 
-create a glider with worldedit (for now)
+create a glider with worldedit //load glider (for now)
 
-![glider](https://cloud.githubusercontent.com/assets/12679496/7900624/97340aa8-0720-11e5-900b-024698d6b732.png)
+![screenshot_1284125787](https://cloud.githubusercontent.com/assets/12679496/7900635/1cdb513e-0721-11e5-8a6e-25d3ad439e8c.png)
 
 glider growing
 
@@ -58,19 +60,19 @@ create a random field using worldedit -- doesn't currently work
 
 ![random_field](https://cloud.githubusercontent.com/assets/12679496/7900627/a23e7168-0720-11e5-9175-b736eced2f81.png)
 
-random field of conway life growing upward doesn't currently work
+random field of conway life growing upward -- doesn't currently work
 
 ![screenshot_1282996956](https://cloud.githubusercontent.com/assets/12679496/7900629/b73e2f18-0720-11e5-9739-53e0222f33be.png)
 
-conway blinker growing up this works if you place the three blocks in rapid succession
+conway blinker growing up -- this works if you place the three blocks in rapid succession
 
 ![screenshot_1283636384](https://cloud.githubusercontent.com/assets/12679496/7900631/d8214120-0720-11e5-96c8-4fc648dc46b4.png)
 
-code 942 growing down
+code 5n942 growing down -- need a block in space to attach the Programmable block to though
 
 ![screenshot_1283373396](https://cloud.githubusercontent.com/assets/12679496/7900632/e475fbf0-0720-11e5-97e1-205afa946526.png)
 
-code 942 growing down, from below
+code 5n942 growing down, from below
 
 ![screenshot_1283277162](https://cloud.githubusercontent.com/assets/12679496/7900633/fff075a4-0720-11e5-8b5c-3d4b90e9039c.png)
 

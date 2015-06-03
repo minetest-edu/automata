@@ -311,9 +311,9 @@ local function nks_rule_convert(nkscode)
 		return false
 	end
 	-- test for single-node growth
-	if bintable[2] == 0 then
+	--[[if bintable[2] == 0 then
 		minetest.chat_send_all("please note, this code will only die alone")
-	end
+	end--]]
 	local str = ""
 	--pass the binary rules back to the node definition
 	for i=1,1,1 do
