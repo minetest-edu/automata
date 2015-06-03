@@ -23,18 +23,16 @@ For the purposes of experimentation another node-type, automata:conway is includ
 
 2. Worldedit schema files work as a way to bring in multiple cells at a time, but only if the metadata in the .we file is properly filled out, since propagation of cells is done via metadata, and worldedit-placed blocks do not use on_construct() so that default fields don't get filled. That means you have to create a shape with stone or some other block, then //save the schema, then manually edit the schema (using search and replace) to be the correct node type and have the correct metadata. A worldedit schema file example (a glider) is included in the schems folder which should be copied to the world folder.
 
-
-
 ## Next Steps in Development
-- improve the form to be less manual, selecting growth and neighbor codes, directions, and node types from a list
+- improve the form to be less manual, selecting growth and neighbor codes, directions, and node types from a list - might abandon the NKS code, just use the "23/2" style code
 - add options to the form to control whether the automata will be destructive to other blocks
 - figure out how to import blocks from worldedit with metadata filled out.
 - figure out a triggering mechanism for groups of blocks simultaneously (applies to 1D and 3D automata as well).
-- set up a library of schems or deploying Game of Life starting states and critters, as per: http://www.radicaleye.com/lifepage/picgloss/picgloss.html
+- set up a library of schems or deploying Game of Life starting states and critters, as per: or import from a text file or .lif files: http://www.argentum.freeserve.co.uk/lex.htm
 - CAN probably solve all of the above by using a form not stored in metadata, passed to player_on_receive_fields, and handling activation differently
 
 - improve efficiency, currently counting neighbors, might be a more efficient method using minetest api calls or voxelmanip
-- find a way for the automata pattern not to break when the player gets too far from part of it
+- find a way for the automata pattern not to break when the player gets too far from part of it (might need to stop using ABMs and rely on in-mod queue)
 
 - add 3D automata, which just amounts to more neighbors and higher rule codes.
 - add rules for 2D automata which check for specific neighbor positions (non-totalistic)

@@ -340,9 +340,9 @@ minetest.register_node("automata:programmable", {
 				"field[1,1;4,1;text;NKS Code (eg: 5n942);]" ..
 				"field[1,2;4,1;plane;Plane (x, y, or z);]" ..
 				"field[1,3;4,1;growth;Growth (-1, 0, 1, 2 ...);]" ..
-				"field[1,4;4,1;trail;Trail Block (eg default:dirt);]" ..
-				"field[1,5;4,1;final;Final Block (eg default:mese);]" ..
-				"field[1,6;4,1;ttl;Generations (eg 30);]" ..
+				"field[1,4;4,1;trail;Trail Block (eg: default:dirt);]" ..
+				"field[1,5;4,1;final;Final Block (eg: default:mese);]" ..
+				"field[1,6;4,1;ttl;Generations (eg: 30);]" ..
 				"button_exit[1,7;2,1;exit;Activate]"
 		) -- this alone makes the block right-clickable?
 		meta:set_string("infotext", "\"Inactive Automata\"")
@@ -376,11 +376,11 @@ minetest.register_node("automata:programmable", {
 		meta:set_string("binrules", binrules)
 		meta:set_int("neighbors", neighbors)
 		
-		meta:set_int("growth", fields.growth and 1 or fields.growth) -- @todo will add this to the formspec
-		meta:set_string("plane", fields.plane and "y" or fields.plane) -- @todo will add this to the formspec
+		meta:set_int("growth", fields.growth and 1 or fields.growth)
+		meta:set_string("plane", fields.plane and "y" or fields.plane)
 		meta:set_int("ttl", fields.ttl and 22 or fields.ttl) -- this sets the limit, counts down each generation / iteration
 		meta:set_string("trail", fields.trail and "default:dirt" or fields.trail)
-		meta:set_string("final", fields.final and "default:dirt" or fields.final) --might not use anymore
+		meta:set_string("final", fields.final and "default:dirt" or fields.final)
 		meta:set_int("fingerprint", math.random(1,100000)) --to test which neighbors count as neighbors
 	end,
 })
