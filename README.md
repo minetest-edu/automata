@@ -28,7 +28,7 @@ For the purposes of experimentation another node-type, automata:conway is includ
 - add options to the form to control whether the automata will be destructive to other blocks
 - figure out how to import blocks from worldedit with metadata filled out.
 - figure out a triggering mechanism for groups of blocks simultaneously (applies to 1D and 3D automata as well).
-- set up a library of schems or deploying Game of Life starting states and critters, as per: or import from a text file or .lif files: http://www.argentum.freeserve.co.uk/lex.htm
+- set up a library of schems or deploying Game of Life starting states and critters, or import from a text file or .lif files: http://www.argentum.freeserve.co.uk/lex.htm
 - CAN probably solve all of the above by using a form not stored in metadata, passed to player_on_receive_fields, and handling activation differently
 
 - improve efficiency, currently counting neighbors, might be a more efficient method using minetest api calls or voxelmanip
