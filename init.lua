@@ -78,16 +78,17 @@ function automata.grow(pattern_id)
 	local new_cell_list = {} --the final cell list to transfer back to automata.patterns[pattern_id]
 							 -- some of ^ will be cells that survived in a growth=0 ruleset
 							 -- ^ this is to save the time of setting nodes and meta for survivals
-	local new_pmin, new_pmax = {x=0,y=0,z=0}
+	local new_pmin = {x=0,y=0,z=0}
+	local new_pmax = {x=0,y=0,z=0}
 	--load the rules
 	local rules = automata.rule_registry[automata.patterns[pattern_id].rule_id]
-	minetest.log("error", "line 84 = rules: "..dump(rules))
+	--minetest.log("error", "line 84 = rules: "..dump(rules))
 	if automata.patterns[pattern_id].iteration == rules.ttl then
 		local is_final = true
 	else
 		local is_final = false
 	end
-	minetest.log("error", "iteration: "..automata.patterns[pattern_id].iteration)
+	--minetest.log("error", "iteration: "..automata.patterns[pattern_id].iteration)
 	local neighborhood= {}
 	local growth_offset = {}
 	-- determine neighborhood and growth offsets
@@ -168,8 +169,8 @@ function automata.grow(pattern_id)
 					new_cell_list[pos_hash] = true --if growth=0 we just let it be but add to new_cell_list
 					--oh, we also have to test it against the pmin and pmax
 					for k,v in next, pos do
-						if pos.k < new_pmin.k then new_pmin.k = pos.k end
-						if pos.k > new_pmax.k then new_pmax.k = pos.k end
+						if pos[k] < new_pmin[k] then new_pmin[k] = pos[k] end
+						if pos[k] > new_pmax[k] then new_pmax[k] = pos[k] end
 					end
 				end
 			end
@@ -204,7 +205,7 @@ function automata.grow(pattern_id)
 		minetest.set_node(dpos, {name=rules.trail})
 	end
 	--set the nodes for births
-	minetest.log("action", "life_list: "..dump(life_list))
+	--minetest.log("action", "life_list: "..dump(life_list))
 	for k,bpos in next, life_list do --@todo why is this processing an empty table life_list!?
 		--test for final iteration
 		if is_final then
@@ -214,10 +215,11 @@ function automata.grow(pattern_id)
 			local meta = minetest.get_meta(bpos)
 			meta:set_int("pattern_id", pattern_id)
 			--add to cell_list
-			table.insert(new_cell_list, minetest.node_position_to_hash(bpos))
+			--minetest.log("action", "bpos: "..dump(bpos))
+			new_cell_list[minetest.hash_node_position(bpos)] = true
 			for k,v in next, bpos do
-				if bpos.k < new_pmin.k then new_pmin.k = bpos.k end
-				if bpos.k > new_pmax.k then new_pmax.k = bpos.k end
+				if bpos[k] < new_pmin[k] then new_pmin[k] = bpos[k] end
+				if bpos[k] > new_pmax[k] then new_pmax[k] = bpos[k] end
 			end
 		end
 	end
@@ -242,6 +244,7 @@ end
 METHOD: automata.validate(fields)
 RETURN: rule_id (a reference to the automata.rule_registry)
 DESC: if the rule values are valid, make an entry into the rules table and return the id
+      defaults are set to be Conway's Game of Life
 TODO: heavy development of the formspec expected
 --]]
 function automata.rules_validate(fields) --
@@ -322,7 +325,7 @@ minetest.register_node("automata:inactive", {
 	end,
 	on_dig = function(pos)
 		--remove from the inactive cell registry (should be called by set_node)
-		automata.inactive_cell_registry[minetest.hash_node_position(pos)] = nil
+		automata.inactive_cells[minetest.hash_node_position(pos)] = nil
 	end,
 })
 
@@ -380,6 +383,7 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 			local pattern_id = #automata.patterns
 			local pos = {}
 			local cell_list = {}
+			local pmin, pmax = {}
 			--activate all inactive nodes @todo handle this with voxelmanip
 			for pos_hash,_ in pairs(automata.inactive_cells) do --@todo check ownership of node? lock registry?
 				pos = minetest.get_position_from_hash(pos_hash)
@@ -390,10 +394,21 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 				--add the pattern id to the metadata of each node we just converted
 				local meta = minetest.get_meta(pos)
 				meta:set_int("pattern_id", pattern_id)
+				--test against pmin and pmax (and first value has to be the first value)
+				--minetest.log("action", "pmin: "..dump(pmin)..", pmax: "..dump(pmax)..", pos: "..dump(pos))
+				--minetest.log("action", "pmin size: "..table.getn(pmin))
+				if table.getn(pmin) > 0 then
+					for k,v in next, pos do
+						if pos[k] < pmin[k] then pmin[k] = pos[k] end
+						if pos[k] > pmax[k] then pmax[k] = pos[k] end
+					end
+				else
+					pmin, pmax = pos
+				end
 			end
 			
 			--add the cell list to the active cell registry with the ttl, rules hash, and cell list
-			local values = {iteration=0, last_cycle=0, rule_id=rule_id, pmin=0, pmax=0, cell_count=table.getn(cell_list), cell_list=cell_list}
+			local values = {iteration=0, last_cycle=0, rule_id=rule_id, pmin=pmin, pmax=pmax, cell_count=table.getn(cell_list), cell_list=cell_list}
 			automata.patterns[pattern_id] = values --overwrite placeholder	
 			
 			minetest.chat_send_player(player:get_player_name(), "You activated all inactive cells!")
