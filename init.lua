@@ -77,7 +77,7 @@ function automata.grow(pattern_id)
 	local empty_neighbors = {} --non -active neighbor cell list to be tested for births
 	local new_cell_list = {} --the final cell list to transfer back to automata.patterns[pattern_id]
 							 -- some of ^ will be cells that survived in a growth=0 ruleset
-							 -- ^ this is to save the time of setting nodes and meta for survivals
+							 -- ^ this is to save the time of setting nodes for survival cells
 	local new_pmin = {x=0,y=0,z=0}
 	local new_pmax = {x=0,y=0,z=0}
 	--load the rules
@@ -143,9 +143,8 @@ function automata.grow(pattern_id)
 		for k, offset in next, neighborhood do
 			--add the offsets to the position @todo although this isn't bad
 			local npos = {x=pos.x+offset.x, y=pos.y+offset.y, z=pos.z+offset.z}
-			--could check if it is even an automata:active but we will skip even loading the node
-			local meta = minetest.get_meta(npos)
-			if meta:get_int("pattern_id") == pattern_id then
+			--look in the cell list
+			if automata.patterns[pattern_id].cell_list[minetest.hash_node_position(npos)] then
 				same_count = same_count +1
 			else
 				table.insert(empty_neighbors, npos)
@@ -186,9 +185,8 @@ function automata.grow(pattern_id)
 		for k, offset in next, neighborhood do
 			--add the offsets to the position @todo although this isn't bad
 			local npos = {x=epos.x+offset.x, y=epos.y+offset.y, z=epos.z+offset.z}
-			--could check if it is even an automata:active but we will skip even loading the node
-			local meta = minetest.get_meta(npos)
-			if meta and meta:get_int("pattern_id") == pattern_id then
+			--look in the cell list
+			if automata.patterns[pattern_id].cell_list[minetest.hash_node_position(npos)] then
 				same_count = same_count +1
 			end
 		end
@@ -212,8 +210,6 @@ function automata.grow(pattern_id)
 			minetest.set_node(bpos, {name=rules.final})
 		else
 			minetest.set_node(bpos, {name="automata:active"})
-			local meta = minetest.get_meta(bpos)
-			meta:set_int("pattern_id", pattern_id)
 			--add to cell_list
 			--minetest.log("action", "bpos: "..dump(bpos))
 			new_cell_list[minetest.hash_node_position(bpos)] = true
@@ -294,7 +290,7 @@ minetest.register_globalstep(function(dtime)
 	end
 end)
 
--- a generic node type for the new metadata-based growth function
+-- a generic node type for active cells
 minetest.register_node("automata:active", {
 	description = "Active Automaton",
 	tiles = {"conway.png"},
@@ -338,9 +334,8 @@ minetest.register_node("automata:active", {
 	groups = {live_automata = 1, oddly_breakable_by_hand=1},
 	on_dig = function(pos)
 		--get the pattern ID from the meta and remove the cell from the pattern table
-		local meta=minetest.get_meta(pos)
-		local pattern_id = meta:get_int("pattern_id")
-		automata.patterns[pattern_id].cell_list[minetest.hash_node_position(pos)] = nil
+		--@todo find a non-meta approach to deleting this node from the appropriate pattern's cell_list
+		--automata.patterns[pattern_id].cell_list[minetest.hash_node_position(pos)] = nil
 		--@todo also check for pmin/pmax change
 		automata.patterns[pattern_id].cell_count = automata.patterns[pattern_id].cell_count -1
 	end,
@@ -391,9 +386,7 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 				cell_list[pos_hash] = true
 				--wipe the inactive cell registry
 				automata.inactive_cells[pos_hash] = nil -- might not need this with after_destruct()
-				--add the pattern id to the metadata of each node we just converted
-				local meta = minetest.get_meta(pos)
-				meta:set_int("pattern_id", pattern_id)
+
 				--test against pmin and pmax (and first value has to be the first value)
 				--minetest.log("action", "pmin: "..dump(pmin)..", pmax: "..dump(pmax)..", pos: "..dump(pos))
 				--minetest.log("action", "pmin size: "..table.getn(pmin))
