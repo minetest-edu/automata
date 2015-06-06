@@ -1,232 +1,294 @@
 automata = {}
+--[[
+PROPERTY: automata.patterns
+TYPE: table
+DESC: patterns are a table of the current state of any automata patterns in the world
+FORMAT: automata.patterns[i] = {
+			iteration=0, -- the current generation of the pattern
+			last_cycle=0, -- last check cycle applied
+			rule_id=0, -- reference to the rule registry row
+			pmin=0, -- pmin and pmax give the bounding volume for pattern
+			pmax=0,
+			cell_count=0, -- how many active cells in pattern, 
+			cell_list={} -- indexed by position hash value = true		
+PERSISTENCE: this table is persisted to a file, minus the cell table
+             this table is loaded from a file on mod load time, but the cell lists
+             must be repopulated at first grow() (or each time if VM used...)
+TODO: might want player ownership
+--]]
+automata.patterns = {}
 
---[[ FOR THE QUEUEING, PROCESSING AND
-     ELIMINATION OF CHECKING REDUNDANCY --]]
-	 
---the Advanced Block Modifier checking interval system is not good enough for our purposes
---because the newly created nodes seem to get included in the original search and so the growth
---of cellular automata is determined by the search order of minetest's ABM system, rather than
---by our generations. @todo, make this even more structured, using ttl and fingerprint to make sure
---that all of the previous generation are processed before we process the next generation
---@todo there is also the issue of ABMs not being processed if out of range of the player.
+--[[
+PROPERTY: automata.inactive_cells
+TYPE: table
+DESC: a table of inactive cells to be activated by next use of the RemoteControl
+FORMAT: indexed by position hash value = true
+PERSISTENCE: this file is persisted to a file on change and loaded at mod start
+TODO: might move this to the automata.patterns with a reserved id that grow() skips
+--]]
+automata.inactive_cells = {}
 
---the queue is there to prevent the creation of more than one block in one spot
---in fact it is used to save time even checking a block that is enqueued to become something
-automata.block_queue = {} --indexed by pos_to_string(pos) and value = meta:to_table() or nodename
+--[[
+PROPERTY: automata.rule_registry
+TYPE: table
+DESC: any rule combination that passes validation is saved in this rule_registry
+FORMAT: automata.rule_registry[i] = rules --may add player name, etc
+PERSISTENCE: this table is persisted to a file, loaded at mod startup
+--]]
+automata.rule_registry = {}
 
---the checklist is there to make sure that nodes are not scanned twice by grow() (this will stop other automata from scanning)
-automata.check_list = {} -- indexed by pos_to_string(pos) and value = true (@todo, make this fingerprint..ttl specific)
+--[[
+PROPERTY: automata.current_cycle
+TYPE: integer
+DESC: keeps track of the current grow cycle, which is not the same as iteration
+PERSISTENCE: at mod load, the highest automata.patterns last_cycle is used to set
+--]]
+automata.current_cycle = 0
 
---each round of checking needs an id
-automata.check_count = 0
+--[[
+METHOD: automata.load_from_files()
+RETURN: nothing yet
+DESC: loads the PERSISTENCE files to restore automata patterns run at end of init.lua
+--]]
+function automata.load_from_files()
 
---moving away from ABMs we need our own node list
-automata.inactive_cell_registry = {} -- indexed by pos_string
-automata.active_cell_registry={} -- indexed by fingerprint, value is {ttl, rules_hash, cell_list} , cell_list is indexed by pos_string
-automata.rulesets={} -- indexed by rules_hash which is just serialized rules table
-
--- function to add nodes to the iteration queue
-local function enqueue(pos, data)
-	--pos is passed as a table but we need it as a string for indexing
-	local pos = minetest.pos_to_string(pos)
-	--checks to see if the block is already enqueued to change, (first come first served)
-	if automata.block_queue[pos] == nil then
-		--minetest.log("action", "enqueued at pos: "..pos)
-		automata.block_queue[pos] = data
-	end
 end
 
--- function to execute the queued commands
-function automata:process_queue()
-	--loop through each entry, keyed by pos with value opts.nodename, opts.gen
-	for k,v in pairs(automata.block_queue) do
-		local pos = minetest.string_to_pos(k)
-		--determine if this is a life or death based on the type of v
-		if type(v) == "table" then --table means life
-			--test the ttl to determine if this is the final node
-			if tonumber(v.fields.ttl) <= 1 then
-				--skip creating an active cell with ttl=0 and just make the final node
-				if v.fields.final then
-					minetest.set_node(pos,{name=v.fields.final})
-				else
-					minetest.set_node(pos,{name=v.fields.trail})
-				end
-			else
-				minetest.set_node(pos,{name=v.fields.nodename}) --allows for explicitly registered types like conway
-				local meta = minetest.get_meta(pos)
-				meta:from_table(v) --load the serialized table into the new node's meta object
-				meta:set_int("ttl",v.fields.ttl-1) --count down the ttl
-			end
-		--string means death
-		elseif type(v) == "string" then
-			minetest.set_node(pos,{name=v})
-		end
-		
-		-- remove the just executed row in the queue
-		automata.block_queue[k] = nil
-		
-		-- remove the check_list entry as well so the space can be alive again for other gens/nodes
-		automata.check_list[k] = nil -- also necessary for VERT = 0 mode
-	end
+--[[
+METHOD: automata.save_to_files()
+RETURN: nothing yet
+DESC: saves the PERSISTENCE files for pattern survival onshutdown/crash
+--]]
+function automata.save_to_files()
+
 end
 
--- then we will use globalstep to execute the queue
-local timer = 0
-minetest.register_globalstep(function(dtime)
-	timer = timer + dtime;
-	if timer >= 5 then
-		-- 1. process the queue
-		automata:process_queue()
-		timer = 0
-		--minetest.log("action", "block_queue: "..dump(automata.block_queue))
-		--minetest.log("action", "check_list: "..dump(automata.check_list))
-		
-		--erase all check_list items from this round of checking and increment
-		for k,v in pairs(automata.check_list) do -- just resetting this table each globalstep seems to work too
-			if v == automata.check_count then automata.check_list[k]= nil end -- wipe all entries from last check round
-		end
-		automata.check_count = automata.check_count + 1 
-		-- 2. grow all active cells
-		--loop through each pattern in the active cell registry and do grow() on each node
-		for fingerprint,values in pairs(automata.active_cell_registry) do
-			--one pattern at a time
 
-			for pos_string,_ in pairs(values.cell_list) do --cell_list is indexed by pos_string
-				grow(pos_string, fingerprint, values.ttl, minetest.unserialize(values.rules_hash)) --these needed for enqueue
-			end
-		end
+--[[
+METHOD: automata.grow(pattern_id)
+RETURN: nothing yet
+DESC: looks at each pattern, applies the rules to generate a death list, birth list then
+      then sets the nodes and updates the pattern table settings and cell_list
+TODO: use voxelmanip for this
+--]]
+function automata.grow(pattern_id)
+	local death_list ={} --cells that will be set to rules.trail at the end of grow()
+	local life_list = {} --cells that will be set to automata:active at the end of grow()
+	local empty_neighbors = {} --non -active neighbor cell list to be tested for births
+	local new_cell_list = {} --the final cell list to transfer back to automata.patterns[pattern_id]
+							 -- some of ^ will be cells that survived in a growth=0 ruleset
+							 -- ^ this is to save the time of setting nodes and meta for survivals
+	local new_pmin, new_pmax = 0
+	--load the rules
+	local rules = automata.rule_registry[automata.patterns[pattern_id].rule_id]
+	if automata.patterns[pattern_id].iteration == rules.ttl then
+		local is_final = true
+	else
+		local is_final = false
 	end
-end)
-
---[[ FOR THE GROWTH OF ACTIVE AUTOMATA BLOCKS --]]
-
---based on the number of neighbors (5 or 9), the plane, position, and the fingerprint of an automata
---will return the count of same neighbors, and a list of non-same neighbors
-local function list_neighbors(pos, neighbors, plane, fingerprint, ttl)
-	--minetest.log("action", "neighbors: "..neighbors..", plane: "..plane..", print: "..fingerprint..", ttl: "..ttl)
-	local list = {}
-	if neighbors == 4 or neighbors == 9 then -- von Neumann neighborhood
-		if plane == "x" then --actually the plane yz
-			list.n  = {x=pos.x,  y=pos.y+1,  z=pos.z}
-			list.e  = {x=pos.x,  y=pos.y,    z=pos.z+1}
-			list.s  = {x=pos.x,  y=pos.y-1,  z=pos.z}
-			list.w  = {x=pos.x,  y=pos.y,    z=pos.z-1}
-		elseif plane == "y" then --actually the plane xz
-			list.n  = {x=pos.x,  y=pos.y,z=pos.z+1}
-			list.e  = {x=pos.x+1,y=pos.y,z=pos.z}
-			list.s  = {x=pos.x,  y=pos.y,z=pos.z-1}
-			list.w  = {x=pos.x-1,y=pos.y,z=pos.z}
-		elseif plane == "z" then --actually the plane xy
-			list.n  = {x=pos.x,  y=pos.y+1,z=pos.z}
-			list.e  = {x=pos.x-1,y=pos.y,z=pos.z}
-			list.s  = {x=pos.x,  y=pos.y-1,z=pos.z}
-			list.w  = {x=pos.x+1,y=pos.y,z=pos.z}
+	local neighborhood= {}
+	local growth_offset = {}
+	-- determine neighborhood and growth offsets
+	if rules.neighbors == 4 or rules.neighbors == 8 then -- von Neumann neighborhood
+		if rules.plane == "x" then --actually the plane yz
+			growth_offset = {x = rules.growth}
+			neighborhood.n  = {y=  1}
+			neighborhood.e  = {z=  1}
+			neighborhood.s  = {y= -1}
+			neighborhood.w  = {z= -1}
+		elseif rules.plane == "y" then --actually the plane xz
+			growth_offset = {y = rules.growth}
+			neighborhood.n  = {z=  1}
+			neighborhood.e  = {x=  1}
+			neighborhood.s  = {z= -1}
+			neighborhood.w  = {x= -1}
+		elseif rules.plane == "z" then --actually the plane xy
+			growth_offset = {z = rules.growth}
+			neighborhood.n  = {y=  1}
+			neighborhood.e  = {x= -1}
+			neighborhood.s  = {y= -1}
+			neighborhood.w  = {x=  1}
 		else
 			--something went wrong
 		end
 	end
-	if neighbors == 8 then -- Moore neighborhood
-		if plane == "x" then
-			list.ne = {x=pos.x,y=pos.y+1,z=pos.z+1}
-			list.se = {x=pos.x,y=pos.y-1,z=pos.z+1}
-			list.sw = {x=pos.x,y=pos.y-1,z=pos.z-1}
-			list.nw = {x=pos.x,y=pos.y+1,z=pos.z-1}
-		elseif plane == "y" then
-			list.ne = {x=pos.x+1,y=pos.y,z=pos.z+1}
-			list.se = {x=pos.x+1,y=pos.y,z=pos.z-1}
-			list.sw = {x=pos.x-1,y=pos.y,z=pos.z-1}
-			list.nw = {x=pos.x-1,y=pos.y,z=pos.z+1}
-		elseif plane == "z" then
-			list.ne = {x=pos.x-1,y=pos.y+1,z=pos.z}
-			list.se = {x=pos.x-1,y=pos.y-1,z=pos.z}
-			list.sw = {x=pos.x+1,y=pos.y-1,z=pos.z}
-			list.nw = {x=pos.x+1,y=pos.y+1,z=pos.z}
+	if rules.neighbors == 8 then -- add missing Moore neighborhood corners
+		if rules.plane == "x" then
+			neighborhood.ne = {y=  1,z=  1}
+			neighborhood.se = {y= -1,z=  1}
+			neighborhood.sw = {y= -1,z= -1}
+			neighborhood.nw = {y=  1,z= -1}
+		elseif rules.plane == "y" then
+			neighborhood.ne = {x=  1,z=  1}
+			neighborhood.se = {x=  1,z= -1}
+			neighborhood.sw = {x= -1,z= -1}
+			neighborhood.nw = {x= -1,z=  1}
+		elseif rules.plane == "z" then
+			neighborhood.ne = {x= -1,y=  1}
+			neighborhood.se = {x= -1,y= -1}
+			neighborhood.sw = {x=  1,y= -1}
+			neighborhood.nw = {x=  1,y=  1}
 		else
 			--minetest.log("error", "neighbors: "..neighbors.." is invalid")
 		end
 	end
 	
-	local same_count = 0
-	local inactive_neighbors = {} --will include any node other than the identical fingerprint and generation
-	
-	for _,v in pairs(list) do
-		local meta = minetest.get_meta(v)
-		--minetest.log("action", fingerprint..":"..meta:get_int("fingerprint")..", "..ttl..":".. meta:get_int("ttl"))
-		--minetest.log("action", minetest.pos_to_string(v))
-		if fingerprint == meta:get_int("fingerprint") and ttl == meta:get_int("ttl") then
-			same_count = same_count + 1
-		else
-			table.insert(inactive_neighbors, v)
-		end
-	end
-	-- mark the node as checked
-	automata.check_list[minetest.pos_to_string(pos)] = automata.check_count --causing problems?
-	--minetest.log("action", "count active: "..same_count..", count inactive: "..#inactive_neighbors)
-	return same_count, inactive_neighbors
-end
-
---new metadata based grow function
-local function grow(pos_string, fingerprint, rules)
-	
-	--first we see if this node has never been checked
-	if automata.check_list[pos_string] ~= automata.check_count then 
-		--minetest.log("action", "not already checked")
-				
-		--now we must count the neighbors, identify how many are the same and which ones are not
-		local same_count, inactive_neighbors = list_neighbors(minetest.string_to_pos(pos_string), fingerprint) --marks this node as checked
-		
-		--survival rules for this node applied
-		--minetest.log("action", "before survival rules: "..binrules)
-		--minetest.log("action", "newpos before survival rules: "..minetest.pos_to_string(pos))
-		if string.find(rules.survive, same_count) then
-			
-			local newpos = {}
-			if     rules.plane == "x" then newpos = {x=pos.x+rules.growth, y=pos.y, z=pos.z}
-			elseif rules.plane == "y" then newpos = {x=pos.x, y=pos.y+rules.growth, z=pos.z}
-			elseif rules.plane == "z" then newpos = {x=pos.x, y=pos.y, z=pos.z+rules.growth}
+	--loop through cell list
+	for pos_hash,v in next, automata.patterns[pattern_id].cell_list do
+		local same_count = 0
+		local pos = minetest.get_position_from_hash(pos_hash) --@todo, figure out how to add / subtract hashes
+		for k, offset in next, neighborhood do
+			--add the offsets to the position @todo although this isn't bad
+			local npos = {x=pos.x+offset.x, y=pos.y+offset.y, z=pos.z+offset.z}
+			--could check if it is even an automata:active but we will skip even loading the node
+			local meta = minetest.get_meta(npos)
+			if meta:get_int("pattern_id") == pattern_id then
+				same_count = same_count +1
+			else
+				table.insert(empty_neighbors, npos)
 			end
-			--minetest.log("action", "newpos after survival rules: "..minetest.pos_to_string(newpos))
-			
-			--if growth is set for this node, then we not only enqueue the next gen, but we set the old block to die
-			if growth ~= 0 then enqueue_death(pos, fingerprint) end --passing a string implies death
-			--regardless of growth setting we enqueue the next generation for life
-			enqueue_life(newpos, fingerprint) --passing a table implies life
-		else
-			--if survival fails we enqueue current cell for death
-			enqueue_death(pos, fingerprint) --passing a string implies death
 		end
-		
-		--birth rules for all inactive neighbors checked
-		if inactive_neighbors then
-			for _,v in pairs(inactive_neighbors) do
-				if automata.check_list[minetest.pos_to_string(v)] ~= automata.check_count --already checked
-				and automata.block_queue[minetest.pos_to_string(v)] == nil then --already has a destiny
-					local sc, _ = list_neighbors(v, fingerprint) --will mark the node as checked
-					--based on the birth rules turn this new cell on
-					if string.find(rules.birth, sc) then
-						local newpos = {}
-						if     rules.plane == "x" then newpos = {x=v.x+rules.growth, y=v.y, z=v.z}
-						elseif rules.plane == "y" then newpos = {x=v.x, y=v.y+rules.growth, z=v.z}
-						elseif rules.plane == "z" then newpos = {x=v.x, y=v.y, z=v.z+rules.growth}
-						end
-						enqueue_life(newpos, fingerprint) --passing a table implies life
+		--now we have a same neighbor count, apply life and death rules
+		local gpos = {}
+		if string.find(rules.survive, same_count) then
+			--add to life list
+			for k,v in next, growth_offset do --only really need to do this once
+				gpos = {x=pos.x+offset.x, y=pos.y+offset.y, z=pos.z+offset.z}
+			end
+			if rules.growth ~= 0 then
+				table.insert(life_list, gpos) --when node is actually set we will add to new_cell_list
+				table.insert(death_list, pos) --with growth, the old pos dies leaving rules.trail
+			else
+				--in the case that this is the final iteration, we need to pass it to the life list afterall
+				if is_final then
+					table.insert(life_list, pos) --when node is actually set we will add to new_cell_list
+				else
+					new_cell_list[pos_hash] = true --if growth=0 we just let it be but add to new_cell_list
+					--oh, we also have to test it against the pmin and pmax
+					do k,v in next, pos do
+						if pos.k < new_pmin.k then new_pmin.k = pos.k end
+						if pos.k > new_pmax.k then new_pmax.k = pos.k end
 					end
 				end
 			end
+			
+		else
+			--add to death list, regardless of growth setting
+			table.insert(death_list, pos)
 		end
 	end
-	return true --end of the grow function
+	--loop through the new total neighbors list
+	for i,epos in next, empty_neighbors do
+		for k, offset in next, neighborhood do
+			--add the offsets to the position @todo although this isn't bad
+			local npos = {x=epos.x+offset.x, y=epos.y+offset.y, z=epos.z+offset.z}
+			--could check if it is even an automata:active but we will skip even loading the node
+			local meta = minetest.get_meta(npos)
+			if meta and meta:get_int("pattern_id") == pattern_id then
+				same_count = same_count +1
+			end
+		end
+		local bpos = {}
+		if string.find(rules.birth, same_count) then
+			--add to life list
+			for k,v in next, growth_offset do --only really need to do this once
+				bpos = {x=epos.x+offset.x, y=epos.y+offset.y, z=epos.z+offset.z}
+			end
+				table.insert(life_list, bpos) --when node is actually set we will add to new_cell_list
+			end
+		end
+	end
+	
+	--set the nodes for deaths
+	for k,dpos in next, death_list do
+		minetest.set_node(dpos, {name=rules.trail})
+	end
+	--set the nodes for births
+	for k,bpos in next, life_list do
+		--test for final iteration
+		if is_final then
+			minetest.set_node(bpos, {name=rules.final})
+		else
+			minetest.set_node(bpos, {name="automata:active"})
+			local meta = minetest.get_meta(bpos)
+			meta:set_int("pattern_id", pattern_id)
+			--add to cell_list
+			table.insert(new_cell_list, minetest.node_position_to_hash(bpos))
+			do k,v in next, bpos do
+				if bpos.k < new_pmin.k then new_pmin.k = bpos.k end
+				if bpos.k > new_pmax.k then new_pmax.k = bpos.k end
+			end
+		end
+	end
+	
+	if is_final then
+		--remove the pattern from the registry
+		automata.patterns[pattern_id] = nil
+	else
+		--update the pattern values: iteration, last_cycle, cell_count, cell_list
+		automata.patterns[pattern_id].iteration = automata.patterns[pattern_id].iteration +1
+		automata.patterns[pattern_id].last_cycle = automata.current_cycle
+		automata.patterns[pattern_id].pmin = new_pmin
+		automata.patterns[pattern_id].pmax = new_pmax
+		automata.patterns[pattern_id].cell_count = table.getn(new_cell_list)
+		automata.patterns[pattern_id].cell_list = new_cell_list
+	end
 end
 
--- force load a block (taken from technic)
--- if the node is loaded, returns it. If it isn't loaded, load it and return nil.
-function get_or_load_node(pos)
-	local node_or_nil = minetest.get_node_or_nil(pos)
-	if node_or_nil then return node_or_nil end
-	local vm = VoxelManip()
-	local MinEdge, MaxEdge = vm:read_from_map(pos, pos)
-	return nil
+
+
+--[[
+METHOD: automata.validate(fields)
+RETURN: rule_id (a reference to the automata.rule_registry)
+DESC: if the rule values are valid, make an entry into the rules table and return the id
+TODO: heavy development of the formspec expected
+--]]
+function automata.rules_validate(fields) --
+	local rules = {}
+	--minetest.chat_send_all("here :"..dump(fields))
+	
+	fields.code = fields.code and "2/23" or fields.code
+	local split = string.find(fields.code, "/")
+	if split then
+		-- take the values to the left and the values to the right @todo validation will be made moot by a stricter form
+		rules["birth"] = string.sub(fields.code, 1, split-1)
+		rules["surivive"] = string.sub(fields.code, split+1)
+		
+	else
+		--minetest.chat_send_player(pname, "the rule code should be in the format \"2/23\"")
+		return false
+	end
+	
+	rules["neighbors"] = fields.neighbors and 8 or fields.neighbors
+	rules["ttl"] = fields.ttl and 30 or fields.ttl
+	rules["growth"] = fields.growth and 0 or fields.growth
+	rules["plane"] = fields.plane and "y" or fields.growth
+	rules["trail"] = fields.trail and "air" or fields.trail
+	rules["final"] = fields.final and "stone" or fields.final
+	
+	--add the rule to the rule_registry @todo, need to check to see if this rule is already in the list (checksum?)
+	table.insert(automata.rule_registry, rules)
+	local rule_id = #automata.rule_registry
+	return rule_id
 end
+
+--[[ MINETEST CALLBACKS:--]]
+
+-- REGISTER GLOBALSTEP
+local timer = 0
+minetest.register_globalstep(function(dtime)
+	timer = timer + dtime;
+	if timer >= 5 then
+		--increment the current cycle
+		automata.current_cycle = automata.current_cycle +1
+		--process each pattern
+		for pattern_id, v in next, automata.patterns do
+			--@todo check if this pattern is even partially loaded, if not skip
+			automata.grow(pattern_id)
+		end
+	timer = 0
+	end
+end)
 
 -- a generic node type for the new metadata-based growth function
 minetest.register_node("automata:active", {
@@ -241,7 +303,7 @@ minetest.register_node("automata:active", {
 
 
 --[[  FOR THE CREATION OF A PROGRAMMABLE BLOCK,
-      AND IT'S ACTIVATION AS A LIVE AUTOMATA BLOCK --]]
+      AND IT'S ACTIVATION AS A PATTERN --]]
 
 -- new block that requires activation
 minetest.register_node("automata:inactive", {
@@ -255,9 +317,29 @@ minetest.register_node("automata:inactive", {
 		local meta = minetest.get_meta(pos)
 		meta:set_string("infotext", "\"Inactive Automata\"")
 		--register the cell in the cell registry
-		automata.inactive_cell_registry[minetest.pos_to_string(pos)] = true -- the cell_registry will change this to the rule hash when active
+		table.insert(automata.inactive_cells[minetest.hash_node_position(pos)] = true
 	end,
+	on_dig = function(pos)
+		--remove from the inactive cell registry (should be called by set_node)
+		automata.inactive_cell_registry[minetest.hash_node_position(pos)] = nil
+	end,
+})
+
+-- an activated automata block -- further handling of this node done by globalstep
+minetest.register_node("automata:active", {
+	description = "Active Automata",
+	tiles = {"conway.png"},
+	drop = { max_items = 1, items = { "automata.inactive" } } -- change back to inactive when dug 
+	light_source = 5,
+	groups = {live_automata = 1, oddly_breakable_by_hand=1},
 	
+	on_dig = function(pos)
+		--get the pattern ID from the meta and remove the cell from the pattern table
+		local meta=minetest.get_meta(pos)
+		local pattern_id = meta:get_int("pattern_id")
+		automata.patterns[pattern_id].cell_list[minetest.hash_node_position(pos)] = nil
+		automata.patterns[pattern_id].cell_count = automata.patterns[pattern_id].cell_count -1
+	end
 })
 
 -- the controller for activating cells
@@ -268,7 +350,7 @@ minetest.register_tool("automata:remote" , {
 		local pname = user:get_player_name()
 		
 		--make sure the inactive cell registry is not empty
-		if next(automata.inactive_cell_registry) then
+		if next(automata.inactive_cells) then
 		minetest.show_formspec(pname, "automata:rc_form",
 			"size[8,9]" ..
 			"field[1,1;4,1;neighbors;Neighbors (4 or 8);]" ..
@@ -290,24 +372,27 @@ minetest.register_tool("automata:remote" , {
 minetest.register_on_player_receive_fields(function(player, formname, fields)
 	if formname == "automata:rc_form" then
 		-- form validation
-		local rules_hash = rules_validate(fields) --will be false if rules don't validate
-		if rules_hash then
+		local rule_id = automata.rules_validate(fields) --will be false if rules don't validate
+		if rule_id then
+			--create the new pattern id empty
+			table.insert(automata.patterns, true) --placeholder to get id
+			local pattern_id = #automata.patterns
+			
 			local cell_list = {}
 			--activate all inactive nodes @todo handle this with voxelmanip
-			for pos_string,_ in pairs(automata.inactive_cell_registry) do --@todo check ownership of node? lock registry?
-				minetest.set_node(minetest.string_to_pos(pos_string), {name="automata:active"})
-				table.insert(cell_list, pos_string)
+			for pos_hash,_ in pairs(automata.inactive_cells) do --@todo check ownership of node? lock registry?
+				minetest.set_node(minetest.get_position_from_hash(pos_hash), {name="automata:active"})
+				cell_list[pos_hash] = true
 				--wipe the inactive cell registry
-				automata.inactive_cell_registry[pos_string] = nil
+				automata.inactive_cells[pos_hash] = nil -- might not need this with after_destruct()
+				--add the pattern id to the metadata of each node we just converted
+				local meta = minetest.get_meta()
+				meta:set_int("pattern_id" = pattern_id)
 			end
-			--create a unique fingerprint for this activated set
-			local fingerprint = math.random(1,100000)
-			--in case we won the lottery and this fingerprint is already in use...
-			while automata.active_cell_registry[fingerprint] do
-				local fingerprint = math.random(1,100000)
-			end
+			
 			--add the cell list to the active cell registry with the ttl, rules hash, and cell list
-			automata.active_cell_registry[fingerprint] = {ttl=fields.ttl, rules_hash=rules_hash, cell_list=cell_list}
+			local values = {iteration=0, last_cycle=0, rule_id=rule_id, pmin=0, pmax=0, cell_count=table.get_n(cell_list), cell_list=cell_list}
+			automata.patterns[pattern_id] = values --overwrite placeholder	
 			
 			minetest.chat_send_player(player:get_player_name(), "You activated all inactive cells!")
 			return true
@@ -318,40 +403,5 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 	
 end)
 
-function rules_validate(fields) --
-	local rules = {}
-	--local pname = user:get_player_name()
-	--minetest.chat_send_all("here :"..dump(fields))
-	
-	fields.code = fields.code and "2/23" or fields.code
-	local split = string.find(fields.code, "/")
-	if split then
-		-- take the values to the left and the values to the right @todo validation will be made moot by a stricter form
-		rules["birthrules"] = string.sub(fields.code, 1, split-1)
-		rules["suriviverules"] = string.sub(fields.code, split+1)
-		
-	else
-		--minetest.chat_send_player(pname, "the rule code should be in the format \"2/23\"")
-		return false
-	end
-	
-	rules["neighbors"] = fields.neighbors and 8 or fields.neighbors
-	rules["ttl"] = fields.ttl and 30 or fields.ttl
-	rules["growth"] = fields.growth and 0 or fields.growth
-	rules["plane"] = fields.plane and "y" or fields.growth
-	rules["trail"] = fields.trail and "air" or fields.trail
-	rules["final"] = fields.final and "stone" or fields.final
-	
-	return rules
-end
-
-
-
--- an activated automata block -- further handling of this node done by globalstep
-minetest.register_node("automata:active", {
-	description = "Active Automata",
-	tiles = {"conway.png"},
-	light_source = 5,
-	groups = {live_automata = 1, oddly_breakable_by_hand=1},
-})
-
+--at mod load restore persistence files
+automata.load_from_files()
