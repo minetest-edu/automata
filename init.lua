@@ -73,6 +73,9 @@ DESC: looks at each pattern, applies the rules to generate a death list, birth l
 TODO: use voxelmanip for this
 --]]
 function automata.grow(pattern_id)
+	--update the pattern values: iteration, last_cycle
+	automata.patterns[pattern_id].iteration = automata.patterns[pattern_id].iteration +1
+	automata.patterns[pattern_id].last_cycle = automata.current_cycle
 	local death_list ={} --cells that will be set to rules.trail at the end of grow()
 	local life_list = {} --cells that will be set to automata:active at the end of grow()
 	local empty_neighbors = {} --non -active neighbor cell list to be tested for births
@@ -145,12 +148,12 @@ function automata.grow(pattern_id)
 			if automata.patterns[pattern_id].cell_list[minetest.hash_node_position(npos)] then
 				same_count = same_count +1
 			else
-				table.insert(empty_neighbors, npos)
+				empty_neighbors[minetest.hash_node_position(npos)] = true
 			end
 		end
 		--now we have a same neighbor count, apply life and death rules
 		local gpos = {}
-		--minetest.log("error", "line 154 = rules.survive: ".. rules.survive..", same_count: "..same_count)
+		--minetest.log("action", "rules.survive: "..rules.survive..", same_count: "..same_count)
 		if string.find(rules.survive, same_count) then
 			--add to life list
 			gpos = {x=pos.x+growth_offset.x, y=pos.y+growth_offset.y, z=pos.z+growth_offset.z}
@@ -178,8 +181,9 @@ function automata.grow(pattern_id)
 		end
 	end
 	--loop through the new total neighbors list
-	for i,epos in next, empty_neighbors do
+	for epos_hash,v in next, empty_neighbors do
 		local same_count = 0
+		local epos = minetest.get_position_from_hash(epos_hash)
 		for k, offset in next, neighborhood do
 			--add the offsets to the position @todo although this isn't bad
 			local npos = {x=epos.x+offset.x, y=epos.y+offset.y, z=epos.z+offset.z}
@@ -189,6 +193,7 @@ function automata.grow(pattern_id)
 			end
 		end
 		local bpos = {}
+		--minetest.log("action", "rules.birth: "..rules.birth..", same_count: "..same_count)
 		if string.find(rules.birth, same_count) then
 			--add to life list
 			bpos = {x=epos.x+growth_offset.x, y=epos.y+growth_offset.y, z=epos.z+growth_offset.z}
@@ -220,11 +225,10 @@ function automata.grow(pattern_id)
 	
 	if is_final == 1 then
 		--remove the pattern from the registry
+		minetest.chat_send_player(automata.patterns[pattern_id].creator, "pattern# "..pattern_id.." just completed")
 		automata.patterns[pattern_id] = nil
 	else
-		--update the pattern values: iteration, last_cycle, cell_count, cell_list
-		automata.patterns[pattern_id].iteration = automata.patterns[pattern_id].iteration +1
-		automata.patterns[pattern_id].last_cycle = automata.current_cycle
+		--update the pattern values: pmin, pmax, cell_count, cell_list
 		automata.patterns[pattern_id].pmin = new_pmin
 		automata.patterns[pattern_id].pmax = new_pmax
 		automata.patterns[pattern_id].cell_count = table.getn(new_cell_list)
@@ -245,7 +249,7 @@ function automata.rules_validate(fields, pname)
 	local rules = {}
 	 --minetest.log("action", "here :"..dump(fields))
 	
-	if fields.code == "" then fields.code = "2/23" end
+	if fields.code == "" then fields.code = "3/23" end
 	local split = string.find(fields.code, "/")
 	if split then
 		-- take the values to the left and the values to the right @todo validation will be made moot by a stricter form
@@ -253,7 +257,7 @@ function automata.rules_validate(fields, pname)
 		rules["survive"] = string.sub(fields.code, split+1)
 		
 	else
-		minetest.chat_send_player(pname, "the rule code should be in the format \"2/23\"; you said: "..fields.code)
+		minetest.chat_send_player(pname, "the rule code should be in the format \"3/23\"; you said: "..fields.code)
 		return false
 	end
 	
@@ -350,7 +354,7 @@ minetest.register_node("automata:active", {
 	tiles = {"active.png"},
 	drop = { max_items = 1, items = { "automata.inactive" } }, -- change back to inactive when dug 
 	light_source = 5,
-	groups = {live_automata = 1, oddly_breakable_by_hand=1},
+	groups = {live_automata = 1, oddly_breakable_by_hand=1, not_in_creative_inventory=1},
 	on_dig = function(pos)
 		--get the pattern ID from the meta and remove the cell from the pattern table
 		--@todo find a non-meta approach to deleting this node from the appropriate pattern's cell_list
@@ -372,7 +376,7 @@ minetest.register_tool("automata:remote" , {
 		minetest.show_formspec(pname, "automata:rc_form",
 			"size[8,9]" ..
 			"field[1,1;2,1;neighbors;N(4 or 8);]" ..
-			"field[3,1;4,1;code;Rules (eg: 2/23);]" ..
+			"field[3,1;4,1;code;Rules (eg: 3/23);]" ..
 			
 			"field[1,2;4,1;plane;Plane (x, y, or z);]" ..
 			"field[1,3;4,1;growth;Growth (-1, 0, 1, 2 ...);]" ..
