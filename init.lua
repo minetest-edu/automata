@@ -341,10 +341,15 @@ minetest.register_node("automata:inactive", {
 		meta:set_string("infotext", "\"Inactive Automata\"")
 		--register the cell in the cell registry
 		automata.inactive_cells[minetest.hash_node_position(pos)] = true
+		--minetest.log("action", "inactive: "..dump(automata.inactive_cells))
 	end,
 	on_dig = function(pos)
 		--remove from the inactive cell registry (should be called by set_node)
-		automata.inactive_cells[minetest.hash_node_position(pos)] = nil
+		if automata.inactive_cells[minetest.hash_node_position(pos)] then
+			automata.inactive_cells[minetest.hash_node_position(pos)] = nil end
+		--minetest.log("action", "inactive: "..dump(automata.inactive_cells))
+		minetest.set_node(pos, {name="air"})
+		return true
 	end,
 })
 
@@ -357,10 +362,16 @@ minetest.register_node("automata:active", {
 	groups = {live_automata = 1, oddly_breakable_by_hand=1, not_in_creative_inventory=1},
 	on_dig = function(pos)
 		--get the pattern ID from the meta and remove the cell from the pattern table
-		--@todo find a non-meta approach to deleting this node from the appropriate pattern's cell_list
-		--automata.patterns[pattern_id].cell_list[minetest.hash_node_position(pos)] = nil
-		--@todo also check for pmin/pmax change
-		automata.patterns[pattern_id].cell_count = automata.patterns[pattern_id].cell_count -1
+		for pattern_id,values in next, automata.patterns do
+			for pos_hash,v in next, values.cell_list do
+				if minetest.hash_node_position(pos) == pos_hash then
+					automata.patterns[pattern_id].cell_list[minetest.hash_node_position(pos)]= nil
+					--@todo update the cell count and the pmin and pmax
+				end
+			end
+		end
+		minetest.set_node(pos, {name="air"})
+		return true
 	end,
 })
 
@@ -393,6 +404,8 @@ minetest.register_tool("automata:remote" , {
 -- Processing the form from the RC
 minetest.register_on_player_receive_fields(function(player, formname, fields)
 	if formname == "automata:rc_form" then
+		--minetest.log("action", "fields submitted: "..dump(fields))
+		if fields.exit == nil then return false end
 		-- form validation
 		local pname = player:get_player_name()
 		local rule_id = automata.rules_validate(fields, pname) --will be false if rules don't validate
