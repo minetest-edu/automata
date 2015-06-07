@@ -49,46 +49,24 @@ Leaving the game leaves all active and inactive automata cells in the map dorman
 - much improved rule form and form validation
 
 ## screenshots (may be out of date but give you an idea)
-Programmable block form:
-![screenshot_1536075142](https://cloud.githubusercontent.com/assets/12679496/7951709/423fb4e4-0968-11e5-881f-7a7f3cec1d73.png)
 
-code 5n942 growing up 30 iterations
+![screenshot_1907736976](https://cloud.githubusercontent.com/assets/12679496/8023523/2dbb2b7c-0ccc-11e5-987c-96a8e3472966.png)
 
-![screenshot_1282617618](https://cloud.githubusercontent.com/assets/12679496/7900620/6c8abb4e-0720-11e5-98f0-a99914cabc81.png)
+![screenshot_1907864008](https://cloud.githubusercontent.com/assets/12679496/8023522/2db88502-0ccc-11e5-9978-9a55003d790e.png)
 
-create a glider with worldedit //load glider (for now)
+![screenshot_1907912113](https://cloud.githubusercontent.com/assets/12679496/8023524/2dc2b4e6-0ccc-11e5-9e07-04959e47b350.png)
 
-![screenshot_1535971080](https://cloud.githubusercontent.com/assets/12679496/7951706/42327d92-0968-11e5-8043-f345c0b78491.png)
+![screenshot_1908036072](https://cloud.githubusercontent.com/assets/12679496/8023525/2dc4ff08-0ccc-11e5-8912-251568a7ec82.png)
 
-glider growing
+![screenshot_1908137241](https://cloud.githubusercontent.com/assets/12679496/8023528/2dd0614a-0ccc-11e5-8574-23618fdd6b94.png)
 
-![screenshot_1282818807](https://cloud.githubusercontent.com/assets/12679496/7900621/71aa9c34-0720-11e5-8c5a-1e9e3e59e7c4.png)
+![screenshot_1908195426](https://cloud.githubusercontent.com/assets/12679496/8023526/2dc70514-0ccc-11e5-9a21-400ccf680d3f.png)
 
-create a random field using worldedit -- doesn't currently work
+![screenshot_1908293278](https://cloud.githubusercontent.com/assets/12679496/8023527/2dcf94c2-0ccc-11e5-9992-b3ad5f71dbf5.png)
 
-![random_field](https://cloud.githubusercontent.com/assets/12679496/7900627/a23e7168-0720-11e5-9175-b736eced2f81.png)
-
-random field of conway life growing upward -- doesn't currently work
-
-![screenshot_1282996956](https://cloud.githubusercontent.com/assets/12679496/7900629/b73e2f18-0720-11e5-9739-53e0222f33be.png)
-
-conway blinker growing up -- this works if you place the three blocks in rapid succession
-
-![screenshot_1283636384](https://cloud.githubusercontent.com/assets/12679496/7900631/d8214120-0720-11e5-96c8-4fc648dc46b4.png)
-
-code 5n942 growing down -- need a block in space to attach the Programmable block to though
+![screenshot_1908744383](https://cloud.githubusercontent.com/assets/12679496/8023529/2dd52108-0ccc-11e5-97fa-079e3c144bba.png)
 
 ![screenshot_1283373396](https://cloud.githubusercontent.com/assets/12679496/7900632/e475fbf0-0720-11e5-97e1-205afa946526.png)
 
-code 5n942 growing down, from below
-
-![screenshot_1283277162](https://cloud.githubusercontent.com/assets/12679496/7900633/fff075a4-0720-11e5-8b5c-3d4b90e9039c.png)
-
-a 5n942 growing in the plane of x -- again attached to a node placed in space by worldedit
-
-![screenshot_1537130594](https://cloud.githubusercontent.com/assets/12679496/7951910/9cb06a3e-096a-11e5-9e9f-bfbb201f3fef.png)
-
-latest dev version
-
-![screenshot_1898729268](https://cloud.githubusercontent.com/assets/12679496/8023190/605dbaa0-0cbc-11e5-9683-c71501f84025.png)
+![screenshot_1282818807](https://cloud.githubusercontent.com/assets/12679496/7900621/71aa9c34-0720-11e5-8c5a-1e9e3e59e7c4.png)
 

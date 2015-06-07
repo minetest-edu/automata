@@ -223,15 +223,15 @@ function automata.grow(pattern_id)
 		end
 	end
 	
-	if is_final == 1 then
+	if is_final == 1 or next(new_cell_list) == nil then
 		--remove the pattern from the registry
-		minetest.chat_send_player(automata.patterns[pattern_id].creator, "pattern# "..pattern_id.." just completed")
+		minetest.chat_send_player(automata.patterns[pattern_id].creator, "pattern# "..pattern_id.." just completed at gen "..automata.patterns[pattern_id].iteration)
 		automata.patterns[pattern_id] = nil
 	else
 		--update the pattern values: pmin, pmax, cell_count, cell_list
 		automata.patterns[pattern_id].pmin = new_pmin
 		automata.patterns[pattern_id].pmax = new_pmax
-		automata.patterns[pattern_id].cell_count = table.getn(new_cell_list)
+		automata.patterns[pattern_id].cell_count = table.getn(new_cell_list) --@todo not working
 		automata.patterns[pattern_id].cell_list = new_cell_list
 	end
 end
@@ -272,7 +272,7 @@ function automata.rules_validate(fields, pname)
 	else minetest.chat_send_player(pname, "Generations must be between 1 and 100; you said: "..fields.ttl) return false end
 	
 	if fields.growth == "" then rules["growth"] = 0
-	elseif tonumber(fields.growth) then rules["growth"] = math.modf(tonumber(fields.growth)+0.5) --@todo: could message about rounding
+	elseif tonumber(fields.growth) then rules["growth"] = tonumber(fields.growth) --@todo: deal with decimals
 	else minetest.chat_send_player(pname, "Growth must be an integer; you said: "..fields.growth) return false end
 	
 	if fields.plane == "" then rules["plane"] = "y"
