@@ -79,3 +79,8 @@ code 5n942 growing down, from below
 a 5n942 growing in the plane of x -- again attached to a node placed in space by worldedit
 
 ![screenshot_1537130594](https://cloud.githubusercontent.com/assets/12679496/7951910/9cb06a3e-096a-11e5-9e9f-bfbb201f3fef.png)
+
+latest dev version
+
+![screenshot_1898729268](https://cloud.githubusercontent.com/assets/12679496/8023190/605dbaa0-0cbc-11e5-9683-c71501f84025.png)
+

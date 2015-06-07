@@ -4,6 +4,7 @@ PROPERTY: automata.patterns
 TYPE: table
 DESC: patterns are a table of the current state of any automata patterns in the world
 FORMAT: automata.patterns[i] = {
+			creator = playername
 			iteration=0, -- the current generation of the pattern
 			last_cycle=0, -- last check cycle applied
 			rule_id=0, -- reference to the rule registry row
@@ -14,7 +15,6 @@ FORMAT: automata.patterns[i] = {
 PERSISTENCE: this table is persisted to a file, minus the cell table
              this table is loaded from a file on mod load time, but the cell lists
              must be repopulated at first grow() (or each time if VM used...)
-TODO: might want player ownership
 --]]
 automata.patterns = {}
 
@@ -24,7 +24,7 @@ TYPE: table
 DESC: a table of inactive cells to be activated by next use of the RemoteControl
 FORMAT: indexed by position hash value = true
 PERSISTENCE: this file is persisted to a file on change and loaded at mod start
-TODO: might move this to the automata.patterns with a reserved id that grow() skips
+@TODO: might move this to the automata.patterns with a reserved id that grow() skips
 --]]
 automata.inactive_cells = {}
 
@@ -32,7 +32,7 @@ automata.inactive_cells = {}
 PROPERTY: automata.rule_registry
 TYPE: table
 DESC: any rule combination that passes validation is saved in this rule_registry
-FORMAT: automata.rule_registry[i] = rules --may add player name, etc
+FORMAT: automata.rule_registry[i] = rules
 PERSISTENCE: this table is persisted to a file, loaded at mod startup
 --]]
 automata.rule_registry = {}
@@ -42,6 +42,7 @@ PROPERTY: automata.current_cycle
 TYPE: integer
 DESC: keeps track of the current grow cycle, which is not the same as iteration
 PERSISTENCE: at mod load, the highest automata.patterns last_cycle is used to set
+@TODO: this might not even be necessary
 --]]
 automata.current_cycle = 0
 
@@ -82,13 +83,10 @@ function automata.grow(pattern_id)
 	local new_pmax = {x=0,y=0,z=0}
 	--load the rules
 	local rules = automata.rule_registry[automata.patterns[pattern_id].rule_id]
-	--minetest.log("error", "line 84 = rules: "..dump(rules))
+	local is_final = 0
 	if automata.patterns[pattern_id].iteration == rules.ttl then
-		local is_final = true
-	else
-		local is_final = false
+		is_final = 1
 	end
-	--minetest.log("error", "iteration: "..automata.patterns[pattern_id].iteration)
 	local neighborhood= {}
 	local growth_offset = {}
 	-- determine neighborhood and growth offsets
@@ -162,7 +160,7 @@ function automata.grow(pattern_id)
 				table.insert(death_list, pos) --with growth, the old pos dies leaving rules.trail
 			else
 				--in the case that this is the final iteration, we need to pass it to the life list afterall
-				if is_final then
+				if is_final == 1 then
 					table.insert(life_list, pos) --when node is actually set we will add to new_cell_list
 				else
 					new_cell_list[pos_hash] = true --if growth=0 we just let it be but add to new_cell_list
@@ -206,7 +204,7 @@ function automata.grow(pattern_id)
 	--minetest.log("action", "life_list: "..dump(life_list))
 	for k,bpos in next, life_list do --@todo why is this processing an empty table life_list!?
 		--test for final iteration
-		if is_final then
+		if is_final == 1 then
 			minetest.set_node(bpos, {name=rules.final})
 		else
 			minetest.set_node(bpos, {name="automata:active"})
@@ -220,7 +218,7 @@ function automata.grow(pattern_id)
 		end
 	end
 	
-	if is_final then
+	if is_final == 1 then
 		--remove the pattern from the registry
 		automata.patterns[pattern_id] = nil
 	else
@@ -243,11 +241,11 @@ DESC: if the rule values are valid, make an entry into the rules table and retur
       defaults are set to be Conway's Game of Life
 TODO: heavy development of the formspec expected
 --]]
-function automata.rules_validate(fields) --
+function automata.rules_validate(fields, pname)
 	local rules = {}
-	--minetest.chat_send_all("here :"..dump(fields))
+	 --minetest.log("action", "here :"..dump(fields))
 	
-	fields.code = fields.code and "2/23" or fields.code
+	if fields.code == "" then fields.code = "2/23" end
 	local split = string.find(fields.code, "/")
 	if split then
 		-- take the values to the left and the values to the right @todo validation will be made moot by a stricter form
@@ -255,16 +253,37 @@ function automata.rules_validate(fields) --
 		rules["survive"] = string.sub(fields.code, split+1)
 		
 	else
-		--minetest.chat_send_player(pname, "the rule code should be in the format \"2/23\"")
+		minetest.chat_send_player(pname, "the rule code should be in the format \"2/23\"; you said: "..fields.code)
 		return false
 	end
 	
-	rules["neighbors"] = fields.neighbors and 8 or fields.neighbors
-	rules["ttl"] = fields.ttl and 30 or fields.ttl
-	rules["growth"] = fields.growth and 0 or fields.growth
-	rules["plane"] = fields.plane and "y" or fields.growth
-	rules["trail"] = fields.trail and "air" or fields.trail
-	rules["final"] = fields.final and "stone" or fields.final
+	
+	
+	if fields.neighbors == "" then rules["neighbors"] = 8
+	elseif fields.neighbors == "4" or fields.neighbors == "8" then rules["neighbors"] = tonumber(fields.neighbors)
+	else minetest.chat_send_player(pname, "neighbors must be 4 or 8; you said: "..fields.neighbors) return false end
+	
+	if fields.ttl == "" then rules["ttl"] = 30
+	elseif tonumber(fields.ttl) > 0 and tonumber(fields.ttl) < 101 then rules["ttl"] = tonumber(fields.ttl)
+	else minetest.chat_send_player(pname, "Generations must be between 1 and 100; you said: "..fields.ttl) return false end
+	
+	if fields.growth == "" then rules["growth"] = 0
+	elseif tonumber(fields.growth) then rules["growth"] = math.modf(tonumber(fields.growth)+0.5) --@todo: could message about rounding
+	else minetest.chat_send_player(pname, "Growth must be an integer; you said: "..fields.growth) return false end
+	
+	if fields.plane == "" then rules["plane"] = "y"
+	elseif string.len(fields.plane) == 1 and string.find("xyzXYZ", fields.plane) then rules["plane"] = string.lower(fields.plane)
+	else minetest.chat_send_player(pname, "Plane must be x, y or z; you said: "..fields.plane) return false end
+	
+	if fields.trail == "" then rules["trail"] = "air"
+	elseif minetest.get_content_id(fields.trail) then rules['trail'] = fields.trail
+	else minetest.chat_send_player(pname, "\""..fields.trail .."\" is not a valid Trail block type") return false end
+	
+	if fields.final == "" then rules["final"] = "automata:active"
+	elseif minetest.get_content_id(fields.final) then rules['final'] = fields.final
+	else minetest.chat_send_player(pname, "\""..fields.final .."\" is not a valid Final block type") return false end
+	
+	rules["creator"] = pname
 	
 	--add the rule to the rule_registry @todo, need to check to see if this rule is already in the list (checksum?)
 	table.insert(automata.rule_registry, rules)
@@ -312,7 +331,7 @@ minetest.register_node("automata:inactive", {
 	light_source = 5,
 	groups = {oddly_breakable_by_hand=1},
 	
-	on_construct = function(pos)
+	on_construct = function(pos) --@todo this is not getting called by worldedit 
 		--local n = minetest.get_node(pos)
 		local meta = minetest.get_meta(pos)
 		meta:set_string("infotext", "\"Inactive Automata\"")
@@ -352,7 +371,7 @@ minetest.register_tool("automata:remote" , {
 		if next(automata.inactive_cells) then
 		minetest.show_formspec(pname, "automata:rc_form",
 			"size[8,9]" ..
-			"field[1,1;2,1;neighbors;Neighbors (4 or 8);]" ..
+			"field[1,1;2,1;neighbors;N(4 or 8);]" ..
 			"field[3,1;4,1;code;Rules (eg: 2/23);]" ..
 			
 			"field[1,2;4,1;plane;Plane (x, y, or z);]" ..
@@ -371,7 +390,9 @@ minetest.register_tool("automata:remote" , {
 minetest.register_on_player_receive_fields(function(player, formname, fields)
 	if formname == "automata:rc_form" then
 		-- form validation
-		local rule_id = automata.rules_validate(fields) --will be false if rules don't validate
+		local pname = player:get_player_name()
+		local rule_id = automata.rules_validate(fields, pname) --will be false if rules don't validate
+		--minetest.log("action","rule_registered: "..dump(automata.rule_registry[rule_id]))
 		if rule_id then
 			--create the new pattern id empty
 			table.insert(automata.patterns, true) --placeholder to get id
@@ -401,7 +422,7 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 			end
 			
 			--add the cell list to the active cell registry with the ttl, rules hash, and cell list
-			local values = {iteration=0, last_cycle=0, rule_id=rule_id, pmin=pmin, pmax=pmax, cell_count=table.getn(cell_list), cell_list=cell_list}
+			local values = {creator=pname, iteration=0, last_cycle=0, rule_id=rule_id, pmin=pmin, pmax=pmax, cell_count=table.getn(cell_list), cell_list=cell_list}
 			automata.patterns[pattern_id] = values --overwrite placeholder	
 			
 			minetest.chat_send_player(player:get_player_name(), "You activated all inactive cells!")
