@@ -1,44 +1,52 @@
-# automata
+# automata v.0.0.2
 ### A minetest mod for growing various cellular automata, including conway's game of life...
-
-This mod adds two new blocks (at time of writing):
-1. Programmable block (good for automata that will grow from a single block)
-2. Conway's Game of Life Block (buggy but workable)
 
 ## Installation
 like any minetest mod just install the mod as "automata" in your mods folder
-optionally copy the schems folder to the world folder (only if you have worldedit installed)
 
 ## What it Does
-there is no configuration to speak of since now this mod provides a "Programmable" block which you place and then fill out the form.
-The form requires a code (as per Wolfram's NKS system, see: https://www.wolframscience.com/nksonline/page-173)
+This mod provides a "Programmable" Cellular Automata blocks which you place, then you select the Remote Control tool and punch it to bring up the activation form.
 
-The rest of the form fields are optional and have defaults, but allow you to control the direction of growth, the plane that the automata operate in, the trail of dead cells they leave behind (can be set to "air"), etc.
+This form can be left blank to default to Conway's Game of Life rules. Otherwise custom rules can be entered in "code" in the birth/survival format, for example, conway cells are rule 3/23 which means if there are 3 neighbors an empty cell turns on, and already-active cells stay on if they have two or three neighbors, otherwise they turn off. (there are many online collections of Game of Life entities: http://www.argentum.freeserve.co.uk/lex.htm )
 
-For the purposes of experimentation another node-type, automata:conway is included for quick placing of Conway Game of Life blocks and adding blocks near currently growing Conway objects.
+Remember that zero is a valid option (for survival at least, not birth -- in this version) so that single nodes will grow with rules like n=4, 14/01234. The rest of the form fields have defaults, but if set allow you to control the direction of growth, the plane that the automata operate in, the trail of dead cells they leave behind (can be set to "air"), etc.
+
+When you hit "activate" all inactive cells you have placed will start growing.
 
 ## Known Issues
-
-1. Really only single-node automata are worth playing with until we figure out a triggering mechanism for multi-cell automata. The "conway" block is the only multi-block automata that will work at this time. We need to develop a way of triggering groups of cells.
-
-2. Worldedit schema files work as a way to bring in multiple cells at a time, but only if the metadata in the .we file is properly filled out, since propagation of cells is done via metadata, and worldedit-placed blocks do not use on_construct() so that default fields don't get filled. That means you have to create a shape with stone or some other block, then //save the schema, then manually edit the schema (using search and replace) to be the correct node type and have the correct metadata. A worldedit schema file example (a glider) is included in the schems folder which should be copied to the world folder.
+Leaving the game leaves all active and inactive automata cells in the map dormant forever. Persistence will be in the next release.
 
 ## Next Steps in Development
-- improve the form to be less manual, selecting growth and neighbor codes, directions, and node types from a list - might abandon the NKS code, just use the "23/2" style code
-- add options to the form to control whether the automata will be destructive to other blocks
-- figure out how to import blocks from worldedit with metadata filled out.
-- figure out a triggering mechanism for groups of blocks simultaneously (applies to 1D and 3D automata as well).
-- set up a library of schems or deploying Game of Life starting states and critters, or import from a text file or .lif files: http://www.argentum.freeserve.co.uk/lex.htm
-- CAN probably solve all of the above by using a form not stored in metadata, passed to player_on_receive_fields, and handling activation differently
+- improve the form:
+-- select boxes instead of text fields
+-- more validation for neighbor / rule combinations, repeated numbers in the code, break code into two fields
+-- field for conversion of NKS codes to readable codes
+-- buttons for presets and /or a list of previously used rules
+-- list of currently running patterns, pausing of patterns, saving pattern current state to schem
+-- way to import saved schems or use //set or //mix (worldedit isn't running on_construct)
+-- menu for creating Game of Life entities from a library of .lif files or other ascii collections
+-- set pattern destructiveness (will eat into existing blocks or not)
 
-- improve efficiency, currently counting neighbors, might be a more efficient method using minetest api calls or voxelmanip
-- find a way for the automata pattern not to break when the player gets too far from part of it (might need to stop using ABMs and rely on in-mod queue)
+- improve efficiency, use LVM (already tracking pmin and pmax)
 
-- add 3D automata, which just amounts to more neighbors and higher rule codes.
-- add rules for 2D automata which check for specific neighbor positions (non-totalistic)
-- add 1D automata (Elementary Automata)
-- add support of Moore and von Neumann neighborhoods (diamonds) of more than 1 unit distance and 3D implementations
-- add an anti-cell which could be used to implement 0-neighbor birth rules within defined game fields/volumes
+- need a way to persist after quit/crash: need to save some tables to file on update, reload and reactivate at mod load
+
+-new automata types:
+-- 3D automata, which just amounts to more neighbors and higher rule codes.
+-- rules for 2D automata which check for specific neighbor positions (non-totalistic)
+-- 1D automata (Elementary Automata) (will need a form field for axis, add rules for 2n)
+-- support of Moore and von Neumann neighborhoods (diamonds) of more than 1 unit distance and 3D implementations (n-depth)
+-- an anti-cell which could be used to implement 0-neighbor birth rules within defined game fields/volumes (or not)
+
+##New since v.0.0.1
+- multiple cell activation solved with Remote Control
+- eliminated all but two node types, active and inactive
+- eliminated reliance on minetest.register_abm, node metadata
+- eliminated use of NKS codes, now using 3/23 format
+- patterns operate in all planes
+- patterns can grow in either direction at any distance per iteration, or stay in plane
+- efficiency greatly improved, started maintaining pmin and pmax
+- much improved rule form and form validation
 
 ## screenshots (may be out of date but give you an idea)
 Programmable block form:
