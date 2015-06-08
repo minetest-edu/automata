@@ -406,7 +406,7 @@ end)
 -- a generic node type for active cells
 minetest.register_node("automata:active", {
 	description = "Active Automaton",
-	tiles = {"conway.png"},
+	tiles = {"active.png"},
 	light_source = 5,
 	groups = {	live_automata = 1, --abm applied to this group only
 				oddly_breakable_by_hand=1,
@@ -473,20 +473,8 @@ minetest.register_tool("automata:remote" , {
 	--left-clicking the tool
 	on_use = function (itemstack, user, pointed_thing)
 		local pname = user:get_player_name()
-		
-		--make sure the inactive cell registry is not empty
-		if automata.inactive_cells ~= {} then
 		automata.show_activation_form(pname)
-		else
-			minetest.chat_send_player(pname, "There are no inactive cells placed to activate!")
-		end
 	end,
-	--right-clicking the tool
-	on_place = function(itemstack, user, pointed_thing)
-		local pname = user:get_player_name()
-		
-		automata.show_lif_form(pname)
-	end,	
 })
 
 -- Processing the form from the RC
@@ -495,31 +483,32 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 	
 	local pname = player:get_player_name()
 	
-	-- activation form submitted
+	-- activation form submitted or lif file selected
 	if formname == "automata:rc_form" then
-		if automata.new_pattern(pname, fields, false) then
-			automata.inactive_cells = {}
-			minetest.chat_send_player(pname, "You activated all inactive cells!")
-		end
-	end
-	
-	-- lif file selected
-	if formname == "automata:rc_form2" then
-		if fields.lif_list then
-			minetest.log("action", "HERE")
-			automata.lif_selected(pname, fields)
+		--lif file selected
+		if not fields.exit and fields.lif_list then
+			--set current selection
+			automata.player_last_lif[pname] = tonumber(string.sub(fields.lif_list, 5))
+			--if double click open popup description
+			if string.sub(fields.lif_list, 1,4) == "DCL:" then
+				automata.show_lif_desc(pname, fields)
+			end
+		elseif fields.exit == "Activate" then
+			if automata.new_pattern(pname, fields) then
+				automata.inactive_cells = {} --reset the inactive cell lsit
+				minetest.chat_send_player(pname, "You activated all inactive cells!")
+			end
+		elseif fields.exit == "Import" then
+			if automata.import_lif(pname, fields) then
+				minetest.chat_send_player(pname, "You imported a LIF to your current location!")
+			end
 		end
 	end
 	
 	-- lif detail screen closed if Close then back to form2, if Import then import_lif()
-	if formname == "automata:rc_form3" then
+	if formname == "automata:rc_lif_desc" then
 		if fields.exit == "Back" then
-			automata.show_lif_form(pname)
-		end
-		if fields.exit == "Import" then
-			if automata.import_lif(pname, fields) then
-				minetest.chat_send_player(pname, "You imported a LIF to your position!")
-			end
+			automata.show_activation_form(pname)
 		end
 	end
 	
@@ -529,21 +518,7 @@ end)
 automata.player_last_lif = {}
 automata.lifs = {} --indexed table of lif names
 automata.lifnames = "" --string of all lif file names
-
-function automata.show_activation_form(pname)
-	minetest.show_formspec(pname, "automata:rc_form", 
-			"size[8,9]" ..
-			"field[1,1;2,1;neighbors;N(4 or 8);]" ..
-			"field[3,1;4,1;code;Rules (eg: 23/3);]" ..
-			
-			"field[1,2;4,1;plane;Plane (x, y, or z);]" ..
-			"field[1,3;4,1;growth;Growth (-1, 0, 1, 2 ...);]" ..
-			"field[1,4;4,1;trail;Trail Block (eg: default:dirt);]" ..
-			"field[1,5;4,1;final;Final Block (eg: default:mese);]" ..
-			"field[1,6;4,1;ttl;Generations (eg: 30);]" ..
-			"button_exit[1,7;2,1;exit;Activate]")
-end
-
+--this is run at load time (see EOF)
 function automata.load_lifs()
 	local lifsfile = io.open(minetest.get_modpath("automata").."/lifs/_list.txt", "r")
 	if lifsfile then
@@ -560,20 +535,38 @@ function automata.load_lifs()
 	end
 end
 
-function automata.show_lif_form(pname)
+function automata.show_activation_form(pname)
 	local lifidx = 1
 	if automata.player_last_lif[pname] ~= nil then
 		lifidx = automata.player_last_lif[pname]
 	end
-	minetest.show_formspec(pname, "automata:rc_form2", 
-		"size[8,10]" ..
-		"textlist[1,1.0;4,8;lif_list;"..automata.lifnames..";"..lifidx.."]"
+	--make sure the inactive cell registry is not empty
+	local activate_section = "label[1,8;No inactive cells in map]"
+	if next(automata.inactive_cells) then
+		activate_section = "label[1,8;Activate inactive cells]"..
+			"button_exit[1,9;2,1;exit;Activate]"
+	else
+		
+	end
+	minetest.show_formspec(pname, "automata:rc_form", 
+			"size[12,10]" ..
+			"field[1,1;2,1;neighbors;N(4 or 8);]" ..
+			"field[3,1;4,1;code;Rules (eg: 23/3);]" ..
+			
+			"field[1,2;4,1;plane;Plane (x, y, or z);]" ..
+			"field[1,3;4,1;growth;Growth (-1, 0, 1, 2 ...);]" ..
+			"field[1,4;4,1;trail;Trail Block (eg: default:dirt);]" ..
+			"field[1,5;4,1;final;Final Block (eg: default:mese);]" ..
+			"field[1,6;4,1;ttl;Generations (eg: 30);]" ..
+			
+			"textlist[8,0;4,7;lif_list;"..automata.lifnames..";"..lifidx.."]"..activate_section..
+			"label[8,8;Import Selected LIF]"..
+			"button_exit[8,9;2,1;exit;Import]"
 	)
 end
 
-function automata.lif_selected(pname,fields)
-	local lifidx = tonumber(string.sub(fields.lif_list, 5))
-	automata.player_last_lif[pname] = lifidx
+function automata.show_lif_desc(pname,fields)
+	local lifidx = automata.player_last_lif[pname]
 	local liffile = io.open(minetest.get_modpath("automata").."/lifs/"..automata.lifs[lifidx]..".LIF", "r")
 	if liffile then
 		local message = ""
@@ -583,10 +576,9 @@ function automata.lif_selected(pname,fields)
 			end
 			
 		end
-		minetest.show_formspec(pname, "automata:rc_form3",
+		minetest.show_formspec(pname, "automata:rc_lif_desc",
 			"size[10,8]" ..
 			"button_exit[1,1;2,1;exit;Back]"..
-			"button_exit[4,1;2,1;exit;Import]"..
 			"textarea[1,3;9,6;desc;"..automata.lifs[lifidx]..";"..minetest.formspec_escape(message).."]"
 		)
 		liffile:close()
@@ -595,7 +587,10 @@ end
 
 function automata.import_lif(pname, fields)
 		
-	local lifidx = automata.player_last_lif[pname] --must be set to get this far
+	local lifidx = 1
+	if automata.player_last_lif[pname] then
+		lifidx=automata.player_last_lif[pname]
+	end
 	local liffile = io.open(minetest.get_modpath("automata").."/lifs/"..automata.lifs[lifidx]..".LIF", "r")
 	if liffile then
 		local origin = nil
