@@ -479,7 +479,7 @@ minetest.register_tool("automata:remote" , {
 
 -- Processing the form from the RC
 minetest.register_on_player_receive_fields(function(player, formname, fields)
-	minetest.log("action", "fields submitted: "..dump(fields))
+	--minetest.log("action", "fields submitted: "..dump(fields))
 	
 	local pname = player:get_player_name()
 	

@@ -12,7 +12,7 @@ This mod provides a "Programmable" Cellular Automata block (Inactive Cell) which
 ### The Rules Form
 "Using" the Remote will bring up a form, this form can be left blank to default to Conway's Game of Life rules. Otherwise custom rules can be entered in "code" in the survival/birth format, for example, conway cells are 8 neighbors, rule 23/3 which means if there are 3 neighbors an empty cell turns on, and already-active cells stay on if they have two or three neighbors, otherwise they turn off. (there are many online collections of Game of Life entities: http://www.argentum.freeserve.co.uk/lex.htm )
 
-Remember that zero is a valid option (for survival at least, not birth -- in this version) so that single nodes will grow with rules like n=4, 01234/14. The rest of the form fields have defaults, but if set allow you to control the direction of growth, the plane that the automata operate in, the trail of dead cells they leave behind (can be set to "air"), etc.
+Remember that zero is a valid option (for survival at least, not birth -- in this version) so that single nodes will grow with rules like n=4, 01234/14. The rest of the form fields also have defaults, but if set allow you to control the direction of growth, the plane that the automata operate in, the trail of dead cells they leave behind (can be set to "air"), etc.
 
 ### Mode 1, activating inactive cells you have placed in the map:
 When you hit "Activate" all inactive cells you have placed will start growing (this option will be missing if no inactive cells have been placed).
