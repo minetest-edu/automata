@@ -263,12 +263,12 @@ function automata.rules_validate(pname, fields)
 	local rules = {}
 	 --minetest.log("action", "here :"..dump(fields))
 	
-	if fields.code == "" then fields.code = "3/23" end
+	if not fields.code or fields.code == "" then fields.code = "23/3" end
 	local split = string.find(fields.code, "/")
 	if split then
 		-- take the values to the left and the values to the right @todo validation will be made moot by a stricter form
-		rules["birth"] = string.sub(fields.code, 1, split-1)
-		rules["survive"] = string.sub(fields.code, split+1)
+		rules["survive"] = string.sub(fields.code, 1, split-1)
+		rules["birth"] = string.sub(fields.code, split+1)
 		
 	else
 		minetest.chat_send_player(pname, "the rule code should be in the format \"3/23\"; you said: "..fields.code)
@@ -277,27 +277,27 @@ function automata.rules_validate(pname, fields)
 	
 	
 	
-	if fields.neighbors == "" then rules["neighbors"] = 8
+	if not fields.neighbors or fields.neighbors == "" then rules["neighbors"] = 8
 	elseif fields.neighbors == "4" or fields.neighbors == "8" then rules["neighbors"] = tonumber(fields.neighbors)
 	else minetest.chat_send_player(pname, "neighbors must be 4 or 8; you said: "..fields.neighbors) return false end
 	
-	if fields.ttl == "" then rules["ttl"] = 30
+	if not fields.ttl or fields.ttl == "" then rules["ttl"] = 30
 	elseif tonumber(fields.ttl) > 0 and tonumber(fields.ttl) < 101 then rules["ttl"] = tonumber(fields.ttl)
 	else minetest.chat_send_player(pname, "Generations must be between 1 and 100; you said: "..fields.ttl) return false end
 	
-	if fields.growth == "" then rules["growth"] = 0
+	if not fields.growth or fields.growth == "" then rules["growth"] = 0
 	elseif tonumber(fields.growth) then rules["growth"] = tonumber(fields.growth) --@todo: deal with decimals
 	else minetest.chat_send_player(pname, "Growth must be an integer; you said: "..fields.growth) return false end
 	
-	if fields.plane == "" then rules["plane"] = "y"
+	if not fields.plane or fields.plane == "" then rules["plane"] = "y"
 	elseif string.len(fields.plane) == 1 and string.find("xyzXYZ", fields.plane) then rules["plane"] = string.lower(fields.plane)
 	else minetest.chat_send_player(pname, "Plane must be x, y or z; you said: "..fields.plane) return false end
 	
-	if fields.trail == "" then rules["trail"] = "air"
+	if not fields.trail or fields.trail == "" then rules["trail"] = "air"
 	elseif minetest.get_content_id(fields.trail) then rules['trail'] = fields.trail
 	else minetest.chat_send_player(pname, "\""..fields.trail .."\" is not a valid Trail block type") return false end
 	
-	if fields.final == "" then rules["final"] = "automata:active"
+	if not fields.final or fields.final == "" then rules["final"] = "automata:active"
 	elseif minetest.get_content_id(fields.final) then rules['final'] = fields.final
 	else minetest.chat_send_player(pname, "\""..fields.final .."\" is not a valid Final block type") return false end
 	
@@ -329,15 +329,16 @@ function automata.new_pattern(pname, fields, offsets)
 		local pattern_id = #automata.patterns
 		local pos = {}
 		local pmin, pmax = {}
-		local hashed_cells = nil
+		local hashed_cells = {}
 		local cell_count=0
 		
 		--are we being supplied with a list of offsets?
-		if next(offsets) then
-			local player=minetest.get_player_by_name(pname)
-			local ppos = player:get_pos()
+		if offsets then
+			local player = minetest.get_player_by_name(pname)
+			local ppos = player:getpos()
+			ppos = {x=math.floor(ppos.x), y=math.floor(ppos.y), z=math.floor(ppos.z)} --remove decimals
 			local rules = automata.rule_registry[rule_id]
-			local hashed_cells = {}
+			--minetest.log("action", "rules: "..dump(rules))
 			for k,offset in next, offsets do
 				local cell = {}
 				if rules.plane == "x" then
@@ -347,7 +348,7 @@ function automata.new_pattern(pname, fields, offsets)
 				elseif rules.plane == "z" then
 					cell = {x = ppos.x-offset.e, y=ppos.y+offset.n, z=ppos.z}
 				end
-				hashed__cells[minetest.hash_node_pos(cell)] = true
+				hashed_cells[minetest.hash_node_position(cell)] = true
 			end
 		else
 			hashed_cells = automata.inactive_cells
@@ -474,7 +475,7 @@ minetest.register_tool("automata:remote" , {
 		local pname = user:get_player_name()
 		
 		--make sure the inactive cell registry is not empty
-		if next(automata.inactive_cells) then
+		if automata.inactive_cells ~= {} then
 		automata.show_activation_form(pname)
 		else
 			minetest.chat_send_player(pname, "There are no inactive cells placed to activate!")
@@ -533,7 +534,7 @@ function automata.show_activation_form(pname)
 	minetest.show_formspec(pname, "automata:rc_form", 
 			"size[8,9]" ..
 			"field[1,1;2,1;neighbors;N(4 or 8);]" ..
-			"field[3,1;4,1;code;Rules (eg: 3/23);]" ..
+			"field[3,1;4,1;code;Rules (eg: 23/3);]" ..
 			
 			"field[1,2;4,1;plane;Plane (x, y, or z);]" ..
 			"field[1,3;4,1;growth;Growth (-1, 0, 1, 2 ...);]" ..
@@ -630,7 +631,7 @@ function automata.import_lif(pname, fields)
 		--minetest.log("action", "cells: "..dump(offset_list))
 		liffile:close()		
 		
-		if rule_override then fields.code = rule_override else fields.code = "" end
+		if rule_override then fields.code = rule_override end
 		if automata.new_pattern(pname, fields, offset_list) then return true end
 	end	
 	return false

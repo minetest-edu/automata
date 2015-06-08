@@ -7,7 +7,7 @@ like any minetest mod just install the mod as "automata" in your mods folder
 ## What it Does
 This mod provides a "Programmable" Cellular Automata blocks which you place, then you select the Remote Control tool and punch it to bring up the activation form.
 
-This form can be left blank to default to Conway's Game of Life rules. Otherwise custom rules can be entered in "code" in the birth/survival format, for example, conway cells are rule 3/23 which means if there are 3 neighbors an empty cell turns on, and already-active cells stay on if they have two or three neighbors, otherwise they turn off. (there are many online collections of Game of Life entities: http://www.argentum.freeserve.co.uk/lex.htm )
+This form can be left blank to default to Conway's Game of Life rules. Otherwise custom rules can be entered in "code" in the survival/birth format, for example, conway cells are rule 23/3 which means if there are 3 neighbors an empty cell turns on, and already-active cells stay on if they have two or three neighbors, otherwise they turn off. (there are many online collections of Game of Life entities: http://www.argentum.freeserve.co.uk/lex.htm )
 
 Remember that zero is a valid option (for survival at least, not birth -- in this version) so that single nodes will grow with rules like n=4, 14/01234. The rest of the form fields have defaults, but if set allow you to control the direction of growth, the plane that the automata operate in, the trail of dead cells they leave behind (can be set to "air"), etc.
 
