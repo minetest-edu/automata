@@ -502,6 +502,10 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 			if automata.import_lif(pname, fields) then
 				minetest.chat_send_player(pname, "You imported a LIF to your current location!")
 			end
+		elseif fields.exit == "Single" then
+			if automata.singlenode(pname,fields) then
+				minetest.chat_send_player(pname, "You started a single cell at your current location!")
+			end
 		end
 	end
 	
@@ -560,7 +564,11 @@ function automata.show_activation_form(pname)
 			"field[1,6;4,1;ttl;Generations (eg: 30);]" ..
 			
 			"textlist[8,0;4,7;lif_list;"..automata.lifnames..";"..lifidx.."]"..activate_section..
-			"label[8,8;Import Selected LIF]"..
+			
+			"label[4.5,8;Start one cell here.]"..
+			"button_exit[4.5,9;2,1;exit;Single]"..
+			
+			"label[8,8;Import Selected LIF here]"..
 			"button_exit[8,9;2,1;exit;Import]"
 	)
 end
@@ -583,6 +591,13 @@ function automata.show_lif_desc(pname,fields)
 		)
 		liffile:close()
 	end
+end
+
+function automata.singlenode(pname,fields)
+	
+	local offset_list = {}
+	table.insert(offset_list, {n=0, e=0}) --no offset, single node, at player's position
+	if automata.new_pattern(pname, fields, offset_list) then return true end
 end
 
 function automata.import_lif(pname, fields)
@@ -626,7 +641,7 @@ function automata.import_lif(pname, fields)
 		--minetest.log("action", "cells: "..dump(offset_list))
 		liffile:close()		
 		
-		if rule_override then fields.code = rule_override end
+		if fields.code == "" and rule_override then fields.code = rule_override end
 		if automata.new_pattern(pname, fields, offset_list) then return true end
 	end	
 	return false

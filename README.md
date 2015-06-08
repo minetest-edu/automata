@@ -1,4 +1,4 @@
-# automata v.0.0.2
+# automata v.0.0.3
 ### A minetest mod for growing various cellular automata, including conway's game of life...
 
 ## Installation
@@ -11,10 +11,17 @@ This form can be left blank to default to Conway's Game of Life rules. Otherwise
 
 Remember that zero is a valid option (for survival at least, not birth -- in this version) so that single nodes will grow with rules like n=4, 01234/14. The rest of the form fields have defaults, but if set allow you to control the direction of growth, the plane that the automata operate in, the trail of dead cells they leave behind (can be set to "air"), etc.
 
-When you hit "activate" all inactive cells you have placed will start growing.
+### Mode 1, activating inactive cells you have placed in the map:
+When you hit "Activate" all inactive cells you have placed will start growing (this option will be missing if no inactive cells have been placed).
+
+### Mode 2, activating a single node at your current location
+When you hit "Single" a single cell will be placed at your current location and the rules you have filled out will be applied. This means the cell will die unless it has a zero in the survival rules: 0xx/xxx eg, 01234/14
+
+### Mode 3, importing a Game of Life entitry from the supplied .LIF collection
+Alternatively you can select a Game of Life pattern from the right-hand list. Double clicking will give a description. Some of these patterns are extremely large and are actually more like huge machines made of smaller patterns set in precise relation to eachother. Clicking "Import" will create the selected pattern, with the selected rules, relative to your current location. (Most of these patterns are intended for standard Conway 23/3 rules but some are intended for variations on these rules. If that is the case the alternate rules, or any you have entered, will be used.)
 
 ## Known Issues
-Leaving the game leaves all active and inactive automata cells in the map dormant forever. Persistence will be in the next release.
+Leaving the game leaves all active and inactive automata cells in the map dormant forever. Persistence will be in a future release.
 
 ## Next Steps in Development
 - improve the form:
@@ -24,7 +31,6 @@ Leaving the game leaves all active and inactive automata cells in the map dorman
 -- buttons for presets and /or a list of previously used rules
 -- list of currently running patterns, pausing of patterns, saving pattern current state to schem
 -- way to import saved schems or use //set or //mix (worldedit isn't running on_construct)
--- menu for creating Game of Life entities from a library of .lif files or other ascii collections
 -- set pattern destructiveness (will eat into existing blocks or not)
 
 - improve efficiency, use LVM (already tracking pmin and pmax)
@@ -37,6 +43,9 @@ Leaving the game leaves all active and inactive automata cells in the map dorman
 -- 1D automata (Elementary Automata) (will need a form field for axis, add rules for 2n)
 -- support of Moore and von Neumann neighborhoods (diamonds) of more than 1 unit distance and 3D implementations (n-depth)
 -- an anti-cell which could be used to implement 0-neighbor birth rules within defined game fields/volumes (or not)
+
+##New since v.0.0.2
+- menu for creating Game of Life entities from a library of .lif files at current location
 
 ##New since v.0.0.1
 - multiple cell activation solved with Remote Control
