@@ -5,9 +5,12 @@
 like any minetest mod just install the mod as "automata" in your mods folder
 
 ## What it Does
-This mod provides a "Programmable" Cellular Automata blocks which you place, then you select the Remote Control tool and punch it to bring up the activation form.
+### 2 Node types, 1 Tool
 
-This form can be left blank to default to Conway's Game of Life rules. Otherwise custom rules can be entered in "code" in the survival/birth format, for example, conway cells are 8 neighbors, rule 23/3 which means if there are 3 neighbors an empty cell turns on, and already-active cells stay on if they have two or three neighbors, otherwise they turn off. (there are many online collections of Game of Life entities: http://www.argentum.freeserve.co.uk/lex.htm )
+This mod provides a "Programmable" Cellular Automata block (Inactive Cell) which you place, then you select the Remote Control tool and punch it to bring up the activation form. Once activated, Inactive Cells become Active Cells and start growing according to the rules you've set. Active Cells turn into Inactive Cells when dug. None of these have crafting recipes at this time since this is sort of obviously a creative mode mod... Cells coming from nothing...
+
+### The Rules Form
+"Using" the Remote will bring up a form, this form can be left blank to default to Conway's Game of Life rules. Otherwise custom rules can be entered in "code" in the survival/birth format, for example, conway cells are 8 neighbors, rule 23/3 which means if there are 3 neighbors an empty cell turns on, and already-active cells stay on if they have two or three neighbors, otherwise they turn off. (there are many online collections of Game of Life entities: http://www.argentum.freeserve.co.uk/lex.htm )
 
 Remember that zero is a valid option (for survival at least, not birth -- in this version) so that single nodes will grow with rules like n=4, 01234/14. The rest of the form fields have defaults, but if set allow you to control the direction of growth, the plane that the automata operate in, the trail of dead cells they leave behind (can be set to "air"), etc.
 
@@ -57,22 +60,23 @@ Leaving the game leaves all active and inactive automata cells in the map dorman
 - efficiency greatly improved, started maintaining pmin and pmax
 - much improved rule form and form validation
 
-## screenshots (may be out of date but give you an idea)
+## screenshots
 
-![screenshot_1907736976](https://cloud.githubusercontent.com/assets/12679496/8023523/2dbb2b7c-0ccc-11e5-987c-96a8e3472966.png)
+"Single" mode
 
-![screenshot_1907864008](https://cloud.githubusercontent.com/assets/12679496/8023522/2db88502-0ccc-11e5-9978-9a55003d790e.png)
+![screenshot_2030436717](https://cloud.githubusercontent.com/assets/12679496/8044135/0b4ec964-0de8-11e5-9cc1-8a2c93e6fc1a.png)
 
-![screenshot_1907912113](https://cloud.githubusercontent.com/assets/12679496/8023524/2dc2b4e6-0ccc-11e5-9e07-04959e47b350.png)
+![screenshot_2030482649](https://cloud.githubusercontent.com/assets/12679496/8044134/0b4c0a26-0de8-11e5-9b83-f38f1bfd6476.png)
 
-![screenshot_1908036072](https://cloud.githubusercontent.com/assets/12679496/8023525/2dc4ff08-0ccc-11e5-8912-251568a7ec82.png)
+"Import" mode
 
-![screenshot_1908137241](https://cloud.githubusercontent.com/assets/12679496/8023528/2dd0614a-0ccc-11e5-8574-23618fdd6b94.png)
+![screenshot_2030594267](https://cloud.githubusercontent.com/assets/12679496/8044137/0b579940-0de8-11e5-84d0-54588b532047.png)
 
-![screenshot_1908195426](https://cloud.githubusercontent.com/assets/12679496/8023526/2dc70514-0ccc-11e5-9a21-400ccf680d3f.png)
+![screenshot_2030616024](https://cloud.githubusercontent.com/assets/12679496/8044138/0b5d4340-0de8-11e5-8b84-6fe2a224337a.png)
 
-![screenshot_1908293278](https://cloud.githubusercontent.com/assets/12679496/8023527/2dcf94c2-0ccc-11e5-9992-b3ad5f71dbf5.png)
+"Activate" mode
 
-![screenshot_1283373396](https://cloud.githubusercontent.com/assets/12679496/7900632/e475fbf0-0720-11e5-97e1-205afa946526.png)
+![screenshot_2030738253](https://cloud.githubusercontent.com/assets/12679496/8044136/0b51f01c-0de8-11e5-84cf-36615741fc4b.png)
 
-![screenshot_1908744383](https://cloud.githubusercontent.com/assets/12679496/8023529/2dd52108-0ccc-11e5-97fa-079e3c144bba.png)
+![screenshot_2030806016](https://cloud.githubusercontent.com/assets/12679496/8044139/0b643b1e-0de8-11e5-95df-e494ee3f5cbb.png)
+
