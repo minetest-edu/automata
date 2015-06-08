@@ -64,9 +64,6 @@ Leaving the game leaves all active and inactive automata cells in the map dorman
 
 ![screenshot_1908293278](https://cloud.githubusercontent.com/assets/12679496/8023527/2dcf94c2-0ccc-11e5-9992-b3ad5f71dbf5.png)
 
-![screenshot_1908744383](https://cloud.githubusercontent.com/assets/12679496/8023529/2dd52108-0ccc-11e5-97fa-079e3c144bba.png)
-
 ![screenshot_1283373396](https://cloud.githubusercontent.com/assets/12679496/7900632/e475fbf0-0720-11e5-97e1-205afa946526.png)
 
-![screenshot_1282818807](https://cloud.githubusercontent.com/assets/12679496/7900621/71aa9c34-0720-11e5-8c5a-1e9e3e59e7c4.png)
-
+![screenshot_1908744383](https://cloud.githubusercontent.com/assets/12679496/8023529/2dd52108-0ccc-11e5-97fa-079e3c144bba.png)

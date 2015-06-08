@@ -46,24 +46,40 @@ PERSISTENCE: at mod load, the highest automata.patterns last_cycle is used to se
 --]]
 automata.current_cycle = 0
 
---[[
-METHOD: automata.load_from_files()
-RETURN: nothing yet
-DESC: loads the PERSISTENCE files to restore automata patterns run at end of init.lua
---]]
-function automata.load_from_files()
-
-end
-
---[[
-METHOD: automata.save_to_files()
+--[[ PERSISTENCE: not yet working
+METHOD: automata.save_patterns_to_file()
 RETURN: nothing yet
 DESC: saves the PERSISTENCE files for pattern survival onshutdown/crash
---]]
-function automata.save_to_files()
-
+--]
+function automata.save_patterns_to_file()
+	local file = io.open(minetest.get_worldpath().."/patterns", "w")
+	if file then
+		for k,v in next, automata.patterns do
+			line = {key=k, values=v}
+			file:write(minetest.serialize(line).."\n")
+		end
+		file:close()
+		minetest.log("action", "savings automata patterns to file")
+	end
 end
 
+--[
+METHOD: automata.save_rules_to_file()
+RETURN: nothing yet
+DESC: saves the PERSISTENCE files for pattern survival onshutdown/crash
+--]
+function automata.save_rules_to_file()
+	local file = io.open(minetest.get_worldpath().."/rule_registry", "w")
+	if file then
+		for k,v in next, automata.rule_registry do
+			line = {key=k, values=v}
+			file:write(minetest.serialize(line).."\n")
+		end
+		file:close()
+		minetest.log("action", "savings automata rules to file")
+	end
+end
+--]]
 
 --[[
 METHOD: automata.grow(pattern_id)
@@ -236,16 +252,14 @@ function automata.grow(pattern_id)
 	end
 end
 
-
-
 --[[
-METHOD: automata.validate(fields)
+METHOD: automata.validate(pname, fields)
 RETURN: rule_id (a reference to the automata.rule_registry)
 DESC: if the rule values are valid, make an entry into the rules table and return the id
       defaults are set to be Conway's Game of Life
 TODO: heavy development of the formspec expected
 --]]
-function automata.rules_validate(fields, pname)
+function automata.rules_validate(pname, fields)
 	local rules = {}
 	 --minetest.log("action", "here :"..dump(fields))
 	
@@ -292,9 +306,83 @@ function automata.rules_validate(fields, pname)
 	--add the rule to the rule_registry @todo, need to check to see if this rule is already in the list (checksum?)
 	table.insert(automata.rule_registry, rules)
 	local rule_id = #automata.rule_registry
+	--automata.save_rules_to_file() --PERSISTENCE: this isn't working
 	return rule_id
 end
 
+--[[
+METHOD: automata.new_pattern(pname, fields, initial)
+RETURN: true/false
+DESC: calls rules_validate() can activate inactive_cells or initialize from a list
+TODO: heavy development of the formspec expected
+--]]
+function automata.new_pattern(pname, fields, offsets)
+	-- form validation
+	local rule_id = automata.rules_validate(pname, fields) --will be false if rules don't validate
+	--minetest.log("action","rule_registered: "..dump(automata.rule_registry[rule_id]))
+	if not rule_id then
+		minetest.chat_send_player(pname, "Something was wrong with your inputs!")
+		return false
+	else
+		--create the new pattern id empty
+		table.insert(automata.patterns, true) --placeholder to get id
+		local pattern_id = #automata.patterns
+		local pos = {}
+		local pmin, pmax = {}
+		local hashed_cells = nil
+		local cell_count=0
+		
+		--are we being supplied with a list of offsets?
+		if next(offsets) then
+			local player=minetest.get_player_by_name(pname)
+			local ppos = player:get_pos()
+			local rules = automata.rule_registry[rule_id]
+			local hashed_cells = {}
+			for k,offset in next, offsets do
+				local cell = {}
+				if rules.plane == "x" then
+					cell = {x = ppos.x, y=ppos.y+offset.n, z=ppos.z+offset.e}
+				elseif rules.plane == "y" then 
+					cell = {x = ppos.x+offset.e, y=ppos.y, z=ppos.z+offset.n}
+				elseif rules.plane == "z" then
+					cell = {x = ppos.x-offset.e, y=ppos.y+offset.n, z=ppos.z}
+				end
+				hashed__cells[minetest.hash_node_pos(cell)] = true
+			end
+		else
+			hashed_cells = automata.inactive_cells
+		end
+		
+		
+		--activate all inactive nodes @todo handle this with voxelmanip
+		for pos_hash,_ in pairs(hashed_cells) do --@todo check ownership of node? lock registry?
+			pos = minetest.get_position_from_hash(pos_hash)
+			minetest.set_node(pos, {name="automata:active"})
+			--cell_list[pos_hash] = true --why do this one cell at a time?
+			--wipe the inactive cell registry
+			--automata.inactive_cells[pos_hash] = nil -- might not need this with after_destruct()
+			cell_count = cell_count + 1
+			
+			if next(pmin) then
+				for k,v in next, pos do
+					if pos[k] < pmin[k] then pmin[k] = pos[k] end
+					if pos[k] > pmax[k] then pmax[k] = pos[k] end
+				end
+			else
+				pmin = pos
+				pmax = pos
+			end
+		end
+		
+		--add the cell list to the active cell registry with the ttl, rules hash, and cell list
+		local values = {creator=pname, iteration=0, last_cycle=0, rule_id=rule_id, pmin=pmin, pmax=pmax, cell_count=cell_count, cell_list=hashed_cells}
+		automata.patterns[pattern_id] = values --overwrite placeholder
+		
+		--automata.save_patterns_to_file() --PERSISTENCE: not working
+		
+	end
+	return true
+end
 --[[ MINETEST CALLBACKS:--]]
 
 -- REGISTER GLOBALSTEP
@@ -308,6 +396,7 @@ minetest.register_globalstep(function(dtime)
 		for pattern_id, v in next, automata.patterns do
 			--@todo check if this pattern is even partially loaded, if not skip
 			automata.grow(pattern_id)
+			--automata.save_patterns_to_file() --PERSISTENCE: this isn't working
 		end
 	timer = 0
 	end
@@ -344,11 +433,12 @@ minetest.register_node("automata:inactive", {
 		--minetest.log("action", "inactive: "..dump(automata.inactive_cells))
 	end,
 	on_dig = function(pos)
-		--remove from the inactive cell registry (should be called by set_node)
+		--remove from the inactive cell registry
 		if automata.inactive_cells[minetest.hash_node_position(pos)] then
 			automata.inactive_cells[minetest.hash_node_position(pos)] = nil end
 		--minetest.log("action", "inactive: "..dump(automata.inactive_cells))
 		minetest.set_node(pos, {name="air"})
+		--automata.save_patterns_to_file() --PERSISTENCE this isn't working
 		return true
 	end,
 })
@@ -379,12 +469,68 @@ minetest.register_node("automata:active", {
 minetest.register_tool("automata:remote" , {
 	description = "Automata Trigger",
 	inventory_image = "remote.png",
+	--left-clicking the tool
 	on_use = function (itemstack, user, pointed_thing)
 		local pname = user:get_player_name()
 		
 		--make sure the inactive cell registry is not empty
 		if next(automata.inactive_cells) then
-		minetest.show_formspec(pname, "automata:rc_form",
+		automata.show_activation_form(pname)
+		else
+			minetest.chat_send_player(pname, "There are no inactive cells placed to activate!")
+		end
+	end,
+	--right-clicking the tool
+	on_place = function(itemstack, user, pointed_thing)
+		local pname = user:get_player_name()
+		
+		automata.show_lif_form(pname)
+	end,	
+})
+
+-- Processing the form from the RC
+minetest.register_on_player_receive_fields(function(player, formname, fields)
+	minetest.log("action", "fields submitted: "..dump(fields))
+	
+	local pname = player:get_player_name()
+	
+	-- activation form submitted
+	if formname == "automata:rc_form" then
+		if automata.new_pattern(pname, fields, false) then
+			automata.inactive_cells = {}
+			minetest.chat_send_player(pname, "You activated all inactive cells!")
+		end
+	end
+	
+	-- lif file selected
+	if formname == "automata:rc_form2" then
+		if fields.lif_list then
+			minetest.log("action", "HERE")
+			automata.lif_selected(pname, fields)
+		end
+	end
+	
+	-- lif detail screen closed if Close then back to form2, if Import then import_lif()
+	if formname == "automata:rc_form3" then
+		if fields.exit == "Back" then
+			automata.show_lif_form(pname)
+		end
+		if fields.exit == "Import" then
+			if automata.import_lif(pname, fields) then
+				minetest.chat_send_player(pname, "You imported a LIF to your position!")
+			end
+		end
+	end
+	
+end)
+
+--the formspecs and related settings / selected field variables
+automata.player_last_lif = {}
+automata.lifs = {} --indexed table of lif names
+automata.lifnames = "" --string of all lif file names
+
+function automata.show_activation_form(pname)
+	minetest.show_formspec(pname, "automata:rc_form", 
 			"size[8,9]" ..
 			"field[1,1;2,1;neighbors;N(4 or 8);]" ..
 			"field[3,1;4,1;code;Rules (eg: 3/23);]" ..
@@ -395,61 +541,129 @@ minetest.register_tool("automata:remote" , {
 			"field[1,5;4,1;final;Final Block (eg: default:mese);]" ..
 			"field[1,6;4,1;ttl;Generations (eg: 30);]" ..
 			"button_exit[1,7;2,1;exit;Activate]")
-		else
-			minetest.chat_send_player(pname, "There are no inactive cells placed to activate!")
+end
+
+function automata.load_lifs()
+	local lifsfile = io.open(minetest.get_modpath("automata").."/lifs/_list.txt", "r")
+	if lifsfile then
+		for line in lifsfile:lines() do
+			if line ~= "" then
+			table.insert(automata.lifs, line)
+			end
 		end
-	end,
-})
+		lifsfile:close()
+	end
 
--- Processing the form from the RC
-minetest.register_on_player_receive_fields(function(player, formname, fields)
-	if formname == "automata:rc_form" then
-		--minetest.log("action", "fields submitted: "..dump(fields))
-		if fields.exit == nil then return false end
-		-- form validation
-		local pname = player:get_player_name()
-		local rule_id = automata.rules_validate(fields, pname) --will be false if rules don't validate
-		--minetest.log("action","rule_registered: "..dump(automata.rule_registry[rule_id]))
-		if rule_id then
-			--create the new pattern id empty
-			table.insert(automata.patterns, true) --placeholder to get id
-			local pattern_id = #automata.patterns
-			local pos = {}
-			local cell_list = {}
-			local pmin, pmax = {}
-			--activate all inactive nodes @todo handle this with voxelmanip
-			for pos_hash,_ in pairs(automata.inactive_cells) do --@todo check ownership of node? lock registry?
-				pos = minetest.get_position_from_hash(pos_hash)
-				minetest.set_node(pos, {name="automata:active"})
-				cell_list[pos_hash] = true
-				--wipe the inactive cell registry
-				automata.inactive_cells[pos_hash] = nil -- might not need this with after_destruct()
+	for k,v in next, automata.lifs do
+		automata.lifnames = automata.lifnames .. v .. ","
+	end
+end
 
-				--test against pmin and pmax (and first value has to be the first value)
-				--minetest.log("action", "pmin: "..dump(pmin)..", pmax: "..dump(pmax)..", pos: "..dump(pos))
-				--minetest.log("action", "pmin size: "..table.getn(pmin))
-				if table.getn(pmin) > 0 then
-					for k,v in next, pos do
-						if pos[k] < pmin[k] then pmin[k] = pos[k] end
-						if pos[k] > pmax[k] then pmax[k] = pos[k] end
-					end
-				else
-					pmin, pmax = pos
-				end
+function automata.show_lif_form(pname)
+	local lifidx = 1
+	if automata.player_last_lif[pname] ~= nil then
+		lifidx = automata.player_last_lif[pname]
+	end
+	minetest.show_formspec(pname, "automata:rc_form2", 
+		"size[8,10]" ..
+		"textlist[1,1.0;4,8;lif_list;"..automata.lifnames..";"..lifidx.."]"
+	)
+end
+
+function automata.lif_selected(pname,fields)
+	local lifidx = tonumber(string.sub(fields.lif_list, 5))
+	automata.player_last_lif[pname] = lifidx
+	local liffile = io.open(minetest.get_modpath("automata").."/lifs/"..automata.lifs[lifidx]..".LIF", "r")
+	if liffile then
+		local message = ""
+		for line in liffile:lines() do
+			if string.sub(line, 1,2) == "#D" then
+				message = message .. string.sub(line, 4) .. "\n"
 			end
 			
-			--add the cell list to the active cell registry with the ttl, rules hash, and cell list
-			local values = {creator=pname, iteration=0, last_cycle=0, rule_id=rule_id, pmin=pmin, pmax=pmax, cell_count=table.getn(cell_list), cell_list=cell_list}
-			automata.patterns[pattern_id] = values --overwrite placeholder	
-			
-			minetest.chat_send_player(player:get_player_name(), "You activated all inactive cells!")
-			return true
-		else
-			minetest.chat_send_player(player:get_player_name(), "Something was wrong with your inputs!")
+		end
+		minetest.show_formspec(pname, "automata:rc_form3",
+			"size[10,8]" ..
+			"button_exit[1,1;2,1;exit;Back]"..
+			"button_exit[4,1;2,1;exit;Import]"..
+			"textarea[1,3;9,6;desc;"..automata.lifs[lifidx]..";"..minetest.formspec_escape(message).."]"
+		)
+		liffile:close()
+	end
+end
+
+function automata.import_lif(pname, fields)
+		
+	local lifidx = automata.player_last_lif[pname] --must be set to get this far
+	local liffile = io.open(minetest.get_modpath("automata").."/lifs/"..automata.lifs[lifidx]..".LIF", "r")
+	if liffile then
+		local origin = nil
+		local offset_list = {}
+		local rule_override = nil
+		
+		--start parsing the LIF file. ignore all lines except those starting with #R, #P, * or .
+		for line in liffile:lines() do
+			--minetest.log("action", "line: "..line)
+			if string.sub(line, 1,2) == "#R" then
+				rule_override = string.sub(line, 4)
+				--@todo: further clean up this string? is it in the same format as our rules.code?
+			end
+			if string.sub(line, 1,2) == "#P" then
+				local split = string.find(string.sub(line, 4), " ")
+				origin = {e = tonumber(string.sub(line, 4, 3+split)), n = tonumber(string.sub(line, split+4))}
+				--minetest.log("action", "temp_origin: "..dump(origin))
+			end
+			--an origin must be set for any lines to be processed otherwise lif file corrupt
+			if string.sub(line, 1,1) == "." or string.sub(line, 1,1) == "*" then
+				if origin ~= nil then
+					
+					for i = 0, string.len(line), 1 do --trying to avoid going past the end of the string
+						--read each line into the offset table
+						if string.sub(line, i+1, i+1) == "*" then
+							table.insert(offset_list, {e=origin.e+i, n=origin.n})
+						end
+					end
+					origin.n = origin.n-1 --so that the next row is using the correct n
+				end
+			end
+		end
+		--minetest.log("action", "cells: "..dump(offset_list))
+		liffile:close()		
+		
+		if rule_override then fields.code = rule_override else fields.code = "" end
+		if automata.new_pattern(pname, fields, offset_list) then return true end
+	end	
+	return false
+end
+	
+--[[ PERSISTENCE: this is not working
+--at mod load restore persistence files
+minetest.log("action", "loading automata rules and patterns from files")
+
+local file = io.open(minetest.get_worldpath().."/rule_registry", "r")
+if file then
+	for line in file:lines() do
+		minetest.log("action", "rules line: "..dump(line))
+		if line ~= "" then
+			local tline = minetest.deserialize(line)
+			automata.rule_registry[tline.key] = tline.values
 		end
 	end
-	
-end)
+	file:close()
+end
+local file = io.open(minetest.get_worldpath().."/patterns", "r")
+if file then
+	for line in file:lines() do
+		minetest.log("action", "patterns line: "..dump(line))
+		if line ~= "" then
+			local tline = minetest.deserialize(line) -- @todo THIS SUCKS. many sub-tables get dropped!!!!!!!!!!!
+			automata.patterns[tline.key] = tline.values
+		end
+	end
+	file:close()
+end
+minetest.log("action", "rules: "..dump(automata.rule_registry))
+minetest.log("action", "patterns: "..dump(automata.patterns)) --]]
 
---at mod load restore persistence files
-automata.load_from_files()
+--read from file, the list of lifs supplied
+automata.load_lifs()
