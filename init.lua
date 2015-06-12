@@ -107,53 +107,97 @@ function automata.grow(pattern_id)
 	if automata.patterns[pattern_id].iteration == rules.gens then
 		is_final = 1
 	end
-	local neighborhood= {}
-	local growth_offset = {}
+	if not rules.grow_distance then rules.grow_distance = 0 end --in the case of 3D!
 	
-	-- determine neighborhood and growth offsets
-	if rules.neighbors == 4 or rules.neighbors == 8 then -- von Neumann neighborhood
-		if rules.grow_axis == "x" then --actually the grow_axis yz
-			growth_offset = {x = rules.grow_distance, y=0, z=0}
-			neighborhood.n  = {x=  0,y=  1,z=  0}
-			neighborhood.e  = {x=  0,y=  0,z=  1}
-			neighborhood.s  = {x=  0,y= -1,z=  0}
-			neighborhood.w  = {x=  0,y=  0,z= -1}
-		elseif rules.grow_axis == "y" then --actually the grow_axis xz
-			growth_offset = {x=0, y = rules.grow_distance, z=0}
-			neighborhood.n  = {x=  0,y=  0,z=  1}
-			neighborhood.e  = {x=  1,y=  0,z=  0}
-			neighborhood.s  = {x=  0,y=  0,z= -1}
-			neighborhood.w  = {x= -1,y=  0,z=  0}
-		elseif rules.grow_axis == "z" then --actually the grow_axis xy
-			growth_offset = {x=0, y=0, z = rules.grow_distance}
-			neighborhood.n  = {x=  0,y=  1,z=  0}
-			neighborhood.e  = {x= -1,y=  0,z=  0}
-			neighborhood.s  = {x=  0,y= -1,z=  0}
-			neighborhood.w  = {x=  1,y=  0,z=  0}
-		else
-			--something went wrong
-		end
-	end
-	if rules.neighbors == 8 then -- add missing Moore neighborhood corners
+	local neighborhood= {}
+	local growth_offset = {x=0,y=0,z=0} --again this default is for 3D @TODO should skip the application of offset lower down
+		
+	-- determine neighborhood and growth offsets (works for 1D and 2D)
+	if rules.neighbors == 2 or rules.neighbors == 4 or rules.neighbors == 8 then
 		if rules.grow_axis == "x" then
-			neighborhood.ne = {x=  0,y=  1,z=  1}
-			neighborhood.se = {x=  0,y= -1,z=  1}
-			neighborhood.sw = {x=  0,y= -1,z= -1}
-			neighborhood.nw = {x=  0,y=  1,z= -1}
-		elseif rules.grow_axis == "y" then
-			neighborhood.ne = {x=  1,y=  0,z=  1}
-			neighborhood.se = {x=  1,y=  0,z= -1}
-			neighborhood.sw = {x= -1,y=  0,z= -1}
-			neighborhood.nw = {x= -1,y=  0,z=  1}
+			growth_offset = {x = rules.grow_distance, y=0, z=0}
 		elseif rules.grow_axis == "z" then
-			neighborhood.ne = {x= -1,y=  1,z=  0}
-			neighborhood.se = {x= -1,y= -1,z=  0}
-			neighborhood.sw = {x=  1,y= -1,z=  0}
-			neighborhood.nw = {x=  1,y=  1,z=  0}
-		else
-			--minetest.log("error", "neighbors: "..neighbors.." is invalid")
+			growth_offset = {x=0, y=0, z = rules.grow_distance}
+		else --grow_axis is y
+			growth_offset = {x=0, y = rules.grow_distance, z=0}
 		end
 	end
+	-- 1D neighbors
+	if rules.neighbors ==2 then
+		if rules.axis == "x" then
+			neighborhood.e = {x=  1,y=  0,z=  0}
+			neighborhood.w = {x= -1,y=  0,z=  0}
+		elseif rules.axis == "z" then
+			neighborhood.n = {x=  0,y=  0,z=  1}
+			neighborhood.s = {x=  0,y=  0,z= -1}
+		else --rules.axis == "y"
+			neighborhood.t = {x=  0,y=  1,z=  0}
+			neighborhood.b = {x=  0,y= -1,z=  0}
+		end
+	else --2D and 3D neighbors
+		if rules.neighbors == 4 or rules.neighbors == 8 -- 2D von Neumann neighborhood
+		or rules.neighbors == 6 or rules.neighbors == 18 or rules.neighbors == 26 then
+			if rules.grow_axis == "x" then --actually the calculation plane yz
+				neighborhood.n  = {x=  0,y=  1,z=  0}
+				neighborhood.e  = {x=  0,y=  0,z=  1}
+				neighborhood.s  = {x=  0,y= -1,z=  0}
+				neighborhood.w  = {x=  0,y=  0,z= -1}
+			elseif rules.grow_axis == "z" then --actually the calculation plane xy
+				neighborhood.n  = {x=  0,y=  1,z=  0}
+				neighborhood.e  = {x= -1,y=  0,z=  0}
+				neighborhood.s  = {x=  0,y= -1,z=  0}
+				neighborhood.w  = {x=  1,y=  0,z=  0}
+			else --grow_axis == "y"  --actually the calculation plane xz (or we are in 3D)
+				neighborhood.n  = {x=  0,y=  0,z=  1}
+				neighborhood.e  = {x=  1,y=  0,z=  0}
+				neighborhood.s  = {x=  0,y=  0,z= -1}
+				neighborhood.w  = {x= -1,y=  0,z=  0}
+			end
+		end
+		if rules.neighbors == 8 -- add missing 2D Moore corners
+		or rules.neighbors == 18 or rules.neighbors == 26 then
+			if rules.grow_axis == "x" then
+				neighborhood.ne = {x=  0,y=  1,z=  1}
+				neighborhood.se = {x=  0,y= -1,z=  1}
+				neighborhood.sw = {x=  0,y= -1,z= -1}
+				neighborhood.nw = {x=  0,y=  1,z= -1}
+			elseif rules.grow_axis == "z" then
+				neighborhood.ne = {x= -1,y=  1,z=  0}
+				neighborhood.se = {x= -1,y= -1,z=  0}
+				neighborhood.sw = {x=  1,y= -1,z=  0}
+				neighborhood.nw = {x=  1,y=  1,z=  0}
+			else --grow_axis is y or we are in 18n or 26n 3D
+				neighborhood.ne = {x=  1,y=  0,z=  1}
+				neighborhood.se = {x=  1,y=  0,z= -1}
+				neighborhood.sw = {x= -1,y=  0,z= -1}
+				neighborhood.nw = {x= -1,y=  0,z=  1}
+			end
+		end
+		if rules.neighbors == 6 or rules.neighbors == 18 or rules.neighbors == 26 then --the 3D top and bottom neighbors
+			neighborhood.t = {x=  0,y=  1,z=  0}
+			neighborhood.b = {x=  0,y= -1,z=  0}
+		end
+		if rules.neighbors == 18 or rules.neighbors == 26 then -- the other 3D planar edge neighbors
+			neighborhood.tn = {x=  0,y=  1,z=  1}
+			neighborhood.te = {x=  1,y=  1,z=  0}
+			neighborhood.ts = {x=  0,y=  1,z= -1}
+			neighborhood.tw = {x= -1,y=  1,z=  0}		
+			neighborhood.bn = {x=  0,y= -1,z=  1}
+			neighborhood.be = {x=  1,y= -1,z=  0}
+			neighborhood.bs = {x=  0,y= -1,z= -1}
+			neighborhood.bw = {x= -1,y= -1,z=  0}
+		end
+		if rules.neighbors == 26 then -- the extreme 3D Moore corner neighbors
+			neighborhood.tne = {x=  1,y=  1,z=  1}
+			neighborhood.tse = {x=  1,y=  1,z= -1}
+			neighborhood.tsw = {x= -1,y=  1,z= -1}
+			neighborhood.tnw = {x= -1,y=  1,z=  1}		
+			neighborhood.bne = {x=  1,y= -1,z=  1}
+			neighborhood.bse = {x=  1,y= -1,z= -1}
+			neighborhood.bsw = {x= -1,y= -1,z= -1}
+			neighborhood.bnw = {x= -1,y= -1,z=  1}
+		end
+	end	
 	
 	--loop through cell list
 	for pos_hash,v in next, automata.patterns[pattern_id].cell_list do
@@ -175,7 +219,7 @@ function automata.grow(pattern_id)
 		if string.find(rules.survive, same_count) then
 			--add to life list
 			gpos = {x=pos.x+growth_offset.x, y=pos.y+growth_offset.y, z=pos.z+growth_offset.z}
-
+			
 			if rules.grow_distance ~= 0 then
 				table.insert(life_list, gpos) --when node is actually set we will add to new_cell_list
 				table.insert(death_list, pos) --with grow_distance ~= 0, the old pos dies leaving rules.trail
@@ -243,16 +287,22 @@ function automata.grow(pattern_id)
 	
 	if is_final == 1 or next(new_cell_list) == nil then
 		--remove the pattern from the registry
+		print(string.format("pattern, "..pattern_id.." iteration #"..automata.patterns[pattern_id].iteration.." elapsed time: %.2fms (completed)", (os.clock() - t1) * 1000))
 		minetest.chat_send_player(automata.patterns[pattern_id].creator, "pattern# "..pattern_id.." just completed at gen "..automata.patterns[pattern_id].iteration)
 		automata.patterns[pattern_id] = nil
 	else
 		--update the pattern values: pmin, pmax, cell_count, cell_list
 		automata.patterns[pattern_id].pmin = new_pmin
 		automata.patterns[pattern_id].pmax = new_pmax
-		automata.patterns[pattern_id].cell_count = table.getn(new_cell_list) --@todo not working
+		local ccount = 0
+		for k,v in next, new_cell_list do
+			ccount = ccount +1
+		end
+		automata.patterns[pattern_id].cell_count = ccount
 		automata.patterns[pattern_id].cell_list = new_cell_list
+		print(string.format("pattern, "..pattern_id.." iteration #"..automata.patterns[pattern_id].iteration.." elapsed time: %.2fms (new count: "..ccount..")", (os.clock() - t1) * 1000))
 	end
-	print(string.format("pattern, "..pattern_id.." iteration #"..automata.patterns[pattern_id].iteration.." elapsed time: %.2fms", (os.clock() - t1) * 1000))
+	
 	return true
 end
 
@@ -279,7 +329,7 @@ function automata.rules_validate(pname, rule_override)
 	--trail
 	local trail = automata.get_player_setting(pname, "trail")
 	if not trail then rules.trail = "air" 
-	elseif minetest.get_content_id(trail) then rules.trail = trail
+	elseif minetest.get_content_id(trail) then rules.trail = trail; print(minetest.get_content_id(trail))
 	else minetest.show_popup(pname, trail.." is not a valid block type") return false end
 	--final
 	local final = automata.get_player_setting(pname, "final")
@@ -431,6 +481,8 @@ function automata.new_pattern(pname, offsets, rule_override)
 					cell = {x = ppos.x+offset.e, y=ppos.y, z=ppos.z+offset.n}
 				elseif rules.grow_axis == "z" then
 					cell = {x = ppos.x-offset.e, y=ppos.y+offset.n, z=ppos.z}
+				else --3D, no grow_axis
+					cell = ppos
 				end
 				hashed_cells[minetest.hash_node_position(cell)] = true
 			end
