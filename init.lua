@@ -6,15 +6,11 @@ DESC: patterns are a table of the current state of any automata patterns in the 
 FORMAT: automata.patterns[i] = {
 			creator = playername
 			iteration=0, -- the current generation of the pattern
-			last_cycle=0, -- last check cycle applied
-			rule_id=0, -- reference to the rule registry row
+			rules=0, -- rule table
 			pmin=0, -- pmin and pmax give the bounding volume for pattern
 			pmax=0,
 			cell_count=0, -- how many active cells in pattern, 
 			cell_list={} -- indexed by position hash value = true		
-PERSISTENCE: this table is persisted to a file, minus the cell table
-             this table is loaded from a file on mod load time, but the cell lists
-             must be repopulated at first grow() (or each time if VM used...)
 --]]
 automata.patterns = {}
 
@@ -27,59 +23,6 @@ PERSISTENCE: this file is persisted to a file on change and loaded at mod start
 @TODO: might move this to the automata.patterns with a reserved id that grow() skips
 --]]
 automata.inactive_cells = {}
-
---[[
-PROPERTY: automata.rule_registry
-TYPE: table
-DESC: any rule combination that passes validation is saved in this rule_registry
-FORMAT: automata.rule_registry[i] = rules
-PERSISTENCE: this table is persisted to a file, loaded at mod startup
---]]
-automata.rule_registry = {}
-
---[[
-PROPERTY: automata.current_cycle
-TYPE: integer
-DESC: keeps track of the current grow cycle, which is not the same as iteration
-PERSISTENCE: at mod load, the highest automata.patterns last_cycle is used to set
-@TODO: this might not even be necessary
---]]
-automata.current_cycle = 0
-
---[[ PERSISTENCE: not yet working
-METHOD: automata.save_patterns_to_file()
-RETURN: nothing yet
-DESC: saves the PERSISTENCE files for pattern survival onshutdown/crash
---]
-function automata.save_patterns_to_file()
-	local file = io.open(minetest.get_worldpath().."/patterns", "w")
-	if file then
-		for k,v in next, automata.patterns do
-			line = {key=k, values=v}
-			file:write(minetest.serialize(line).."\n")
-		end
-		file:close()
-		minetest.log("action", "savings automata patterns to file")
-	end
-end
-
---[
-METHOD: automata.save_rules_to_file()
-RETURN: nothing yet
-DESC: saves the PERSISTENCE files for pattern survival onshutdown/crash
---]
-function automata.save_rules_to_file()
-	local file = io.open(minetest.get_worldpath().."/rule_registry", "w")
-	if file then
-		for k,v in next, automata.rule_registry do
-			line = {key=k, values=v}
-			file:write(minetest.serialize(line).."\n")
-		end
-		file:close()
-		minetest.log("action", "savings automata rules to file")
-	end
-end
---]]
 
 --[[
 METHOD: automata.grow(pattern_id)
@@ -99,8 +42,9 @@ function automata.grow(pattern_id)
 	local new_cell_list = {} --the final cell list to transfer back to automata.patterns[pattern_id]
 							 -- some of ^ will be cells that survived in a grow_distance=0 ruleset
 							 -- ^ this is to save the time of setting nodes for survival cells
-	local new_pmin = {x=0,y=0,z=0}
-	local new_pmax = {x=0,y=0,z=0}
+	local new_pmin, new_pmax
+	local ccount = 0
+	
 	--load the rules
 	local rules = automata.patterns[pattern_id].rules
 	local is_final = 0
@@ -225,15 +169,11 @@ function automata.grow(pattern_id)
 				table.insert(death_list, pos) --with grow_distance ~= 0, the old pos dies leaving rules.trail
 			else
 				--in the case that this is the final iteration, we need to pass it to the life list afterall
+				ccount = ccount + 1
 				if is_final == 1 then
 					table.insert(life_list, pos) --when node is actually set we will add to new_cell_list
 				else
 					new_cell_list[pos_hash] = true --if grow_distance==0 we just let it be but add to new_cell_list
-					--oh, we also have to test it against the pmin and pmax
-					for k,v in next, pos do
-						if pos[k] < new_pmin[k] then new_pmin[k] = pos[k] end
-						if pos[k] > new_pmax[k] then new_pmax[k] = pos[k] end
-					end
 				end
 			end
 			
@@ -270,39 +210,31 @@ function automata.grow(pattern_id)
 	--set the nodes for births
 	--minetest.log("action", "life_list: "..dump(life_list))
 	for k,bpos in next, life_list do --@todo why is this processing an empty table life_list!?
-		--test for final iteration
-		if is_final == 1 then
-			minetest.set_node(bpos, {name=rules.final})
-		else
-			minetest.set_node(bpos, {name="automata:active"})
-			--add to cell_list
-			--minetest.log("action", "bpos: "..dump(bpos))
-			new_cell_list[minetest.hash_node_position(bpos)] = true
-			for k,v in next, bpos do
-				if bpos[k] < new_pmin[k] then new_pmin[k] = bpos[k] end
-				if bpos[k] > new_pmax[k] then new_pmax[k] = bpos[k] end
+		--test for destructive mode and if the node is occupied
+		if rules.destruct == "true" or minetest.get_node(bpos).name == "air" then
+			ccount = ccount + 1
+			--test for final iteration
+			if is_final == 1 then
+				minetest.set_node(bpos, {name=rules.final})
+			else
+				minetest.set_node(bpos, {name="automata:active"})
+				--add to cell_list
+				--minetest.log("action", "bpos: "..dump(bpos))
+				new_cell_list[minetest.hash_node_position(bpos)] = true
 			end
 		end
 	end
-	
+	print(string.format("pattern, "..pattern_id.." iteration #"..automata.patterns[pattern_id].iteration.." elapsed time: %.2fms (new count: "..ccount..")", (os.clock() - t1) * 1000))
 	if is_final == 1 or next(new_cell_list) == nil then
 		--remove the pattern from the registry
-		print(string.format("pattern, "..pattern_id.." iteration #"..automata.patterns[pattern_id].iteration.." elapsed time: %.2fms (completed)", (os.clock() - t1) * 1000))
 		minetest.chat_send_player(automata.patterns[pattern_id].creator, "pattern# "..pattern_id.." just completed at gen "..automata.patterns[pattern_id].iteration)
-		automata.patterns[pattern_id] = nil
-	else
-		--update the pattern values: pmin, pmax, cell_count, cell_list
-		automata.patterns[pattern_id].pmin = new_pmin
-		automata.patterns[pattern_id].pmax = new_pmax
-		local ccount = 0
-		for k,v in next, new_cell_list do
-			ccount = ccount +1
-		end
-		automata.patterns[pattern_id].cell_count = ccount
-		automata.patterns[pattern_id].cell_list = new_cell_list
-		print(string.format("pattern, "..pattern_id.." iteration #"..automata.patterns[pattern_id].iteration.." elapsed time: %.2fms (new count: "..ccount..")", (os.clock() - t1) * 1000))
+		automata.patterns[pattern_id].status = "finished"
 	end
-	
+	--update the pattern values: pmin, pmax, cell_count, cell_list
+	automata.patterns[pattern_id].pmin = new_pmin
+	automata.patterns[pattern_id].pmax = new_pmax
+	automata.patterns[pattern_id].cell_count = ccount
+	automata.patterns[pattern_id].cell_list = new_cell_list
 	return true
 end
 
@@ -329,7 +261,7 @@ function automata.rules_validate(pname, rule_override)
 	--trail
 	local trail = automata.get_player_setting(pname, "trail")
 	if not trail then rules.trail = "air" 
-	elseif minetest.get_content_id(trail) ~= 127 then rules.trail = trail; print(minetest.get_content_id(trail))
+	elseif minetest.get_content_id(trail) ~= 127 then rules.trail = trail
 	else automata.show_popup(pname, trail.." is not a valid block type") return false end
 	--final
 	local final = automata.get_player_setting(pname, "final")
@@ -442,7 +374,7 @@ function automata.rules_validate(pname, rule_override)
 			rules.birth = "3"
 		end
 	end
-	minetest.log("action","rules: "..dump(rules))
+	--minetest.log("action","rules: "..dump(rules))
 	return rules
 end
 
@@ -456,14 +388,13 @@ function automata.new_pattern(pname, offsets, rule_override)
 	-- form validation
 	local rules = automata.rules_validate(pname, rule_override) --will be false if rules don't validate
 	
-	minetest.log("action", "rules after validate: "..dump(rules))
+	--minetest.log("action", "rules after validate: "..dump(rules))
 	
 	if rules then --in theory bad rule settings in the form should fail validation and throw a popup
 		--create the new pattern id empty
 		table.insert(automata.patterns, true) --placeholder to get id
 		local pattern_id = #automata.patterns
 		local pos = {}
-		local pmin, pmax = {}
 		local hashed_cells = {}
 		local cell_count=0
 		
@@ -495,27 +426,12 @@ function automata.new_pattern(pname, offsets, rule_override)
 		for pos_hash,_ in pairs(hashed_cells) do --@todo check ownership of node? lock registry?
 			pos = minetest.get_position_from_hash(pos_hash)
 			minetest.set_node(pos, {name="automata:active"})
-			--cell_list[pos_hash] = true --why do this one cell at a time?
-			--wipe the inactive cell registry
-			--automata.inactive_cells[pos_hash] = nil -- might not need this with after_destruct()
 			cell_count = cell_count + 1
-			
-			if next(pmin) then
-				for k,v in next, pos do
-					if pos[k] < pmin[k] then pmin[k] = pos[k] end
-					if pos[k] > pmax[k] then pmax[k] = pos[k] end
-				end
-			else
-				pmin = pos
-				pmax = pos
-			end
 		end
 		
 		--add the cell list to the active cell registry with the gens, rules hash, and cell list
-		local values = {creator=pname, iteration=0, last_cycle=0, rules=rules, pmin=pmin, pmax=pmax, cell_count=cell_count, cell_list=hashed_cells}
+		local values = {creator=pname, status="active", iteration=0, last_cycle=0, rules=rules, cell_count=cell_count, cell_list=hashed_cells}
 		automata.patterns[pattern_id] = values --overwrite placeholder
-		
-		--automata.save_patterns_to_file() --PERSISTENCE: not working
 		
 	end
 	return true
@@ -527,13 +443,17 @@ local timer = 0
 minetest.register_globalstep(function(dtime)
 	timer = timer + dtime;
 	if timer >= 5 then
-		--increment the current cycle
-		automata.current_cycle = automata.current_cycle +1
+		--print("who has tab5 open: "..dump(automata.open_tab5))
 		--process each pattern
 		for pattern_id, v in next, automata.patterns do
-			--@todo check if this pattern is even partially loaded, if not skip
-			automata.grow(pattern_id)
-			--automata.save_patterns_to_file() --PERSISTENCE: this isn't working
+			if automata.patterns[pattern_id].status == "active" --pattern is not paused or finished
+			and minetest.get_player_by_name(automata.patterns[pattern_id].creator) then --player left game
+				automata.grow(pattern_id)
+				--update anyone's formspec who has tab 5 open
+				for pname,v in next, automata.open_tab5 do
+					automata.show_rc_form(pname) --@TODO this sometimes fails to happen on finished patterns (issue #30)
+				end
+			end
 		end
 	timer = 0
 	end
@@ -544,7 +464,7 @@ minetest.register_node("automata:active", {
 	description = "Active Automaton",
 	tiles = {"active.png"},
 	light_source = 5,
-	groups = {	live_automata = 1, --abm applied to this group only
+	groups = {	live_automata = 1,
 				oddly_breakable_by_hand=1,
 				not_in_creative_inventory = 1 --only programmable nodes appear in the inventory
 	},
@@ -558,7 +478,7 @@ minetest.register_node("automata:active", {
 minetest.register_node("automata:inactive", {
 	description = "Programmable Automata",
 	tiles = {"inactive.png"},
-	light_source = 5,
+	light_source = 3,
 	groups = {oddly_breakable_by_hand=1},
 	
 	on_construct = function(pos) --@todo this is not getting called by worldedit 
@@ -575,7 +495,6 @@ minetest.register_node("automata:inactive", {
 			automata.inactive_cells[minetest.hash_node_position(pos)] = nil end
 		--minetest.log("action", "inactive: "..dump(automata.inactive_cells))
 		minetest.set_node(pos, {name="air"})
-		--automata.save_patterns_to_file() --PERSISTENCE this isn't working
 		return true
 	end,
 })
@@ -586,7 +505,7 @@ minetest.register_node("automata:active", {
 	tiles = {"active.png"},
 	drop = { max_items = 1, items = { "automata.inactive" } }, -- change back to inactive when dug 
 	light_source = 5,
-	groups = {live_automata = 1, oddly_breakable_by_hand=1, not_in_creative_inventory=1},
+	groups = {oddly_breakable_by_hand=1, not_in_creative_inventory=1},
 	on_dig = function(pos)
 		--get the pattern ID from the meta and remove the cell from the pattern table
 		for pattern_id,values in next, automata.patterns do
@@ -615,8 +534,14 @@ minetest.register_tool("automata:remote" , {
 
 -- Processing the form from the RC
 minetest.register_on_player_receive_fields(function(player, formname, fields)
-	minetest.log("action", "fields submitted: "..dump(fields))
+	--minetest.log("action", "fields submitted: "..dump(fields))
 	local pname = player:get_player_name()
+	
+	--handle open tab5, system needs to know who has tab5 open at any moment so that
+	-- it can be refreshed by globalstep activity...
+	if fields.quit or ( fields.tab ~= "5" and not fields.pid_id ) then 
+		automata.open_tab5[pname] = nil
+	end --reset to nil in on_player_receive_fields()
 	
 	--detect tab change but save all fields on every update including quit
 	local old_tab = automata.get_player_setting(pname, "tab")
@@ -624,6 +549,20 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 	if old_tab and old_tab ~= automata.get_player_setting(pname, "tab") then
 		automata.show_rc_form(pname)
 	end	
+	
+	--if the pid_id click or double-click field is submitted, we pause or unpause the pattern
+	if fields.pid_id then
+		--translate the pid_id back to a pattern_id
+		local pid_id = string.sub(fields.pid_id, 5)
+		local pattern_id = automata.open_tab5[pname][tonumber(pid_id)] --this table is created in show_rcform() survives changes to patterns table
+		if string.sub(fields.pid_id, 1, 4) == "CHG:" then
+			automata.patterns[pattern_id].status = "paused"
+		elseif string.sub(fields.pid_id, 1, 4) == "DCL:" then
+			automata.patterns[pattern_id].status = "active"
+		end
+		--update the form
+		automata.show_rc_form(pname)
+	end
 	
 	--this is the only situation where a exit ~= "" should open a form
 	if formname == "automata:popup" then
@@ -655,8 +594,10 @@ end)
 
 --the formspecs and related settings / selected field variables
 automata.player_settings = {} --per player form persistence
+automata.open_tab5 = {} --who has tab 5 (Manage) open at any moment
 automata.lifs = {} --indexed table of lif names
 automata.lifnames = "" --string of all lif file names
+
 --this is run at load time (see EOF)
 function automata.load_lifs()
 	local lifsfile = io.open(minetest.get_modpath("automata").."/lifs/_list.txt", "r")
@@ -673,6 +614,33 @@ function automata.load_lifs()
 		automata.lifnames = automata.lifnames .. v .. ","
 	end
 end
+
+function automata.save_player_settings()
+	local file = io.open(minetest.get_worldpath().."/automata_settings", "w")
+	if file then
+		for k,v in next, automata.player_settings do
+			local line = {key=k, values=v}
+			file:write(minetest.serialize(line).."\n")
+		end
+		file:close()
+		--minetest.log("action", "savings player settings to file")
+	end
+end
+-- load settings run at EOF at mod start
+function automata.load_player_settings()
+	local file = io.open(minetest.get_worldpath().."/automata_settings", "r")
+	if file then
+		for line in file:lines() do
+			--minetest.log("action", "settings line: "..dump(line))
+			if line ~= "" then
+				local tline = minetest.deserialize(line)
+				automata.player_settings[tline.key] = tline.values
+			end
+		end
+		file:close()
+	end
+end
+
 --every time a form button, select, dropdown or tab is pressed, all settings must be updated.
 function automata.update_settings(pname, fields)
 	if not automata.player_settings[pname] then automata.player_settings[pname] = {} end
@@ -682,18 +650,14 @@ function automata.update_settings(pname, fields)
 			automata.player_settings[pname][k] = v --we will preserve field entries exactly as entered 
 		end
 	end
-	minetest.log("action", "player settings: "..dump(automata.player_settings[pname]))
+	automata.save_player_settings() --persist to file
 end
 
 function automata.get_player_setting(pname, setting)
 	
 	if automata.player_settings[pname] then
-		--minetest.log("action", "line: 550")
 		if automata.player_settings[pname][setting] then
-			--minetest.log("action", "line: 552")
-			--minetest.log("action", "tab: "..automata.player_settings[pname][setting])
 			if automata.player_settings[pname][setting] ~= "" then
-				--minetest.log("action", "line: 554")
 				return automata.player_settings[pname][setting]
 			else
 				return false
@@ -714,9 +678,11 @@ function automata.show_rc_form(pname)
 		automata.player_settings[pname] = {tab=tab}
 	end
 	
-	minetest.log("action", "tab: "..tab)
-	
-	--load the default fields for the forms
+	--handle open tab5, system needs to know who has tab5 open at any moment so that
+	-- it can be refreshed by globalstep activity...
+	if tab == "5" then automata.open_tab5[pname] = {} end --gets reset to nil in on_player_receive_fields()
+		
+	--load the default fields for the forms based on player's last settings
 	--gens
 	local gens = automata.get_player_setting(pname, "gens")
 	if not gens then gens = "" end
@@ -755,7 +721,6 @@ function automata.show_rc_form(pname)
 		--grow_distance
 		local grow_distance = automata.get_player_setting(pname, "grow_distance")
 		if not grow_distance then grow_distance = "" end
-		minetest.log("action", "distance: ".. grow_distance)
 		
 		--grow_axis (for 2D implies the calculation plane, for 1D cannot be the same as "axis")
 		local grow_axis_id
@@ -865,10 +830,29 @@ function automata.show_rc_form(pname)
 		return true
 	end
 	if tab == "5" then --manage patterns
+		local patterns = ""
+		local i = 1
+		for k,v in next, automata.patterns do
+			if v.creator == pname then
+				i = i+1
+				patterns = 	patterns..","..minetest.formspec_escape("pattern: "..k --intentional comma to start blank line pid_id=1
+							.." status: "..v.status.." at gen: "..v.iteration.." size: "..v.cell_count.." cells")
+				automata.open_tab5[pname][i]=k --need this table to decode the form's pid_ids back to pattern_ids
+			end
+		end
+		local pid_id = automata.get_player_setting(pname, "pid_id")
+		if not pid_id then pid_id = 1 end
+		
+		local f_plist
+		if patterns == "" then f_plist = "label[5,0;no active patterns]"
+		else f_plist = 	"label[5,0;Your patterns]"..
+						"textlist[5,1;8,6;pid_id;"..patterns..";1]" end
+		
 		minetest.show_formspec(pname, "automata:rc_form", 
 								f_header ..			
-								"label[8,8;Pause]"..
-								"button_exit[8,9;2,1;exit;Pause]"
+								f_plist..
+								"label[1,1;Single Click to Pause]"..
+								"label[1,2;Double Click to Resume]"
 		)
 		return true
 	end
@@ -933,35 +917,7 @@ function automata.import_lif(pname)
 	end	
 	return false
 end
-	
---[[ PERSISTENCE: this is not working
---at mod load restore persistence files
-minetest.log("action", "loading automata rules and patterns from files")
 
-local file = io.open(minetest.get_worldpath().."/rule_registry", "r")
-if file then
-	for line in file:lines() do
-		minetest.log("action", "rules line: "..dump(line))
-		if line ~= "" then
-			local tline = minetest.deserialize(line)
-			automata.rule_registry[tline.key] = tline.values
-		end
-	end
-	file:close()
-end
-local file = io.open(minetest.get_worldpath().."/patterns", "r")
-if file then
-	for line in file:lines() do
-		minetest.log("action", "patterns line: "..dump(line))
-		if line ~= "" then
-			local tline = minetest.deserialize(line) -- @todo THIS SUCKS. many sub-tables get dropped!!!!!!!!!!!
-			automata.patterns[tline.key] = tline.values
-		end
-	end
-	file:close()
-end
-minetest.log("action", "rules: "..dump(automata.rule_registry))
-minetest.log("action", "patterns: "..dump(automata.patterns)) --]]
-
---read from file, the list of lifs supplied
+--read from file, various persisted settings
+automata.load_player_settings()
 automata.load_lifs()
