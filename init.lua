@@ -89,6 +89,7 @@ DESC: looks at each pattern, applies the rules to generate a death list, birth l
 TODO: use voxelmanip for this
 --]]
 function automata.grow(pattern_id)
+	local t1 = os.clock()
 	--update the pattern values: iteration, last_cycle
 	automata.patterns[pattern_id].iteration = automata.patterns[pattern_id].iteration +1
 	automata.patterns[pattern_id].last_cycle = automata.current_cycle
@@ -96,34 +97,35 @@ function automata.grow(pattern_id)
 	local life_list = {} --cells that will be set to automata:active at the end of grow()
 	local empty_neighbors = {} --non -active neighbor cell list to be tested for births
 	local new_cell_list = {} --the final cell list to transfer back to automata.patterns[pattern_id]
-							 -- some of ^ will be cells that survived in a growth=0 ruleset
+							 -- some of ^ will be cells that survived in a grow_distance=0 ruleset
 							 -- ^ this is to save the time of setting nodes for survival cells
 	local new_pmin = {x=0,y=0,z=0}
 	local new_pmax = {x=0,y=0,z=0}
 	--load the rules
-	local rules = automata.rule_registry[automata.patterns[pattern_id].rule_id]
+	local rules = automata.patterns[pattern_id].rules
 	local is_final = 0
-	if automata.patterns[pattern_id].iteration == rules.ttl then
+	if automata.patterns[pattern_id].iteration == rules.gens then
 		is_final = 1
 	end
 	local neighborhood= {}
 	local growth_offset = {}
+	
 	-- determine neighborhood and growth offsets
 	if rules.neighbors == 4 or rules.neighbors == 8 then -- von Neumann neighborhood
 		if rules.grow_axis == "x" then --actually the grow_axis yz
-			growth_offset = {x = rules.growth, y=0, z=0}
+			growth_offset = {x = rules.grow_distance, y=0, z=0}
 			neighborhood.n  = {x=  0,y=  1,z=  0}
 			neighborhood.e  = {x=  0,y=  0,z=  1}
 			neighborhood.s  = {x=  0,y= -1,z=  0}
 			neighborhood.w  = {x=  0,y=  0,z= -1}
 		elseif rules.grow_axis == "y" then --actually the grow_axis xz
-			growth_offset = {x=0, y = rules.growth, z=0}
+			growth_offset = {x=0, y = rules.grow_distance, z=0}
 			neighborhood.n  = {x=  0,y=  0,z=  1}
 			neighborhood.e  = {x=  1,y=  0,z=  0}
 			neighborhood.s  = {x=  0,y=  0,z= -1}
 			neighborhood.w  = {x= -1,y=  0,z=  0}
 		elseif rules.grow_axis == "z" then --actually the grow_axis xy
-			growth_offset = {x=0, y=0, z = rules.growth}
+			growth_offset = {x=0, y=0, z = rules.grow_distance}
 			neighborhood.n  = {x=  0,y=  1,z=  0}
 			neighborhood.e  = {x= -1,y=  0,z=  0}
 			neighborhood.s  = {x=  0,y= -1,z=  0}
@@ -174,15 +176,15 @@ function automata.grow(pattern_id)
 			--add to life list
 			gpos = {x=pos.x+growth_offset.x, y=pos.y+growth_offset.y, z=pos.z+growth_offset.z}
 
-			if rules.growth ~= 0 then
+			if rules.grow_distance ~= 0 then
 				table.insert(life_list, gpos) --when node is actually set we will add to new_cell_list
-				table.insert(death_list, pos) --with growth, the old pos dies leaving rules.trail
+				table.insert(death_list, pos) --with grow_distance ~= 0, the old pos dies leaving rules.trail
 			else
 				--in the case that this is the final iteration, we need to pass it to the life list afterall
 				if is_final == 1 then
 					table.insert(life_list, pos) --when node is actually set we will add to new_cell_list
 				else
-					new_cell_list[pos_hash] = true --if growth=0 we just let it be but add to new_cell_list
+					new_cell_list[pos_hash] = true --if grow_distance==0 we just let it be but add to new_cell_list
 					--oh, we also have to test it against the pmin and pmax
 					for k,v in next, pos do
 						if pos[k] < new_pmin[k] then new_pmin[k] = pos[k] end
@@ -192,7 +194,7 @@ function automata.grow(pattern_id)
 			end
 			
 		else
-			--add to death list, regardless of growth setting
+			--add to death list, regardless of grow_distance setting
 			table.insert(death_list, pos)
 		end
 	end
@@ -250,6 +252,8 @@ function automata.grow(pattern_id)
 		automata.patterns[pattern_id].cell_count = table.getn(new_cell_list) --@todo not working
 		automata.patterns[pattern_id].cell_list = new_cell_list
 	end
+	print(string.format("pattern, "..pattern_id.." iteration #"..automata.patterns[pattern_id].iteration.." elapsed time: %.2fms", (os.clock() - t1) * 1000))
+	return true
 end
 
 --[[
@@ -259,33 +263,37 @@ DESC: if the rule values are valid, make an entry into the rules table and retur
       defaults are set to be Conway's Game of Life
 TODO: heavy development of the formspec expected
 --]]
-function automata.rules_validate(pname)
+function automata.rules_validate(pname, rule_override)
 	local rules = {}
 	 --minetest.log("action", "here :"..dump(fields))
 	--read the player settings to get the last tab and then validate the fields relevant for that tab
 	local tab = automata.get_player_setting(pname, "tab")
 	
-	--regardless we validate the common growth fields and fields common to 1D,2D and 3D growth
+	--regardless we validate the growth options common to 1D, 2D and 3D automata
 	--gens
-	if not fields.ttl or fields.ttl == "" then rules["ttl"] = 30
-	elseif tonumber(fields.ttl) > 0 and tonumber(fields.ttl) < 101 then rules["ttl"] = tonumber(fields.ttl)
-	else minetest.chat_send_player(pname, "Generations must be between 1 and 100; you said: "..fields.ttl) return false end
+	local gens = automata.get_player_setting(pname, "gens")
+	if not gens then rules.gens = 100
+	elseif tonumber(gens) > 0 and tonumber(gens) < 1001 then rules.gens = tonumber(gens)
+	else minetest.show_popup(pname, "Generations must be between 1 and 1000; you said: "..gens) return false end
+	
 	--trail
-	if not fields.trail or fields.trail == "" then rules["trail"] = "air"
-	elseif minetest.get_content_id(fields.trail) then rules['trail'] = fields.trail
-	else minetest.chat_send_player(pname, "\""..fields.trail .."\" is not a valid Trail block type") return false end
+	local trail = automata.get_player_setting(pname, "trail")
+	if not trail then rules.trail = "air" 
+	elseif minetest.get_content_id(trail) then rules.trail = trail
+	else minetest.show_popup(pname, trail.." is not a valid block type") return false end
 	--final
-	if not fields.final or fields.final == "" then rules["final"] = "automata:active"
-	elseif minetest.get_content_id(fields.final) then rules['final'] = fields.final
-	else minetest.chat_send_player(pname, "\""..fields.final .."\" is not a valid Final block type") return false end
+	local final = automata.get_player_setting(pname, "final")
+	if not final then rules.final = "stone" 
+	elseif minetest.get_content_id(final) then rules.final = final
+	else minetest.show_popup(pname, final.." is not a valid block type") return false end
+	
 	--destructive
 	local destruct = automata.get_player_setting(pname, "destruct")
-	if not destruct then rules.destruct = "no" 
-	elseif destruct > 0 and destruct <= 256 then rules.destruct = destruct
-	else minetest.show_popup(pname, "the 1D rule should be between 1 and 256; you said: "..destruct) return false end
+	if not destruct then rules.destruct = "false" 
+	else rules.destruct = destruct end
 	
-	--then validate fields common to 1D and 2D
-	if tab == "1" or tab == "2" then
+	--then validate fields common to 1D and 2D and importing 2D .LIF files (tab 4)
+	if tab == "1" or tab == "2" or tab == "4" then
 		
 		--grow_distance
 		local grow_distance = automata.get_player_setting(pname, "grow_distance")
@@ -294,80 +302,97 @@ function automata.rules_validate(pname)
 		else minetest.show_popup(pname, "the grow distance needs to be an integer; you said: "..grow_distance) return false end
 		
 		--grow_axis (for 2D implies the calculation plane, for 1D cannot be the same as "axis")
-		local grow_axis_id = automata.get_player_setting(pname, "grow_axis")
-		if not grow_axis_id then rules.grow_axis = "x" end
-		elseif grow_axis_id == "1" then rules.grow_axis = "x"
-		elseif grow_axis_id == "2" then rules.grow_axis = "y"
-		elseif grow_axis_id == "3" then rules.grow_axis = "z"
-		end
-		
+		local grow_axis = automata.get_player_setting(pname, "grow_axis")
+		if not grow_axis then rules.grow_axis = "y" --with the dropdown on the form this default should never be used
+		else rules.grow_axis = grow_axis end
 	end
 	
 	--fields specific to 1D
 	if tab == "1"  then
+		rules.neighbors = 2 --implied (neighbors is used by grow() to determine dimensionality)
+		
 		--code1d (must be between 1 and 256 -- NKS rule numbers for 1D automata)
 		local code1d = automata.get_player_setting(pname, "code1d")
 		if not code1d then rules.code1d = 30 
 		elseif code1d > 0 and code1d <= 256 then rules.code1d = code1d
 		else minetest.show_popup(pname, "the 1D rule should be between 1 and 256; you said: "..code1d) return false end
 		
-		--axis (this is the calculation axis and must not be the same as the grow_axis)
-		local axis_id = automata.get_player_setting(pname, "axis")
-		if not axis_id then rules.axis = "x" 
-		elseif axis_id == "1" then rules.axis = "x"
-		elseif axis_id == "2" then rules.axis = "y"
-		elseif axis_id == "3" then rules.axis = "z"
-		end
-		if axis_id == grow_axis_id then minetest.show_popup(pname, "the grow axis and main axis cannot be the same") return false end
+		--axis (this is the calculation axis and must not be the same as the grow_axis, only matters if tab=1)
+		local axis = automata.get_player_setting(pname, "axis")
+		if not axis then rules.axis = "x"  --with the dropdown on the form this default should never be used
+		else rules.axis = axis end
+		
+		if axis == grow_axis then minetest.show_popup(pname, "the grow axis and main axis cannot be the same") return false end
 		
 	end
 	
 	--fields specific to 2D
-	if tab == "2"  then
+	if tab == "2" then
 		--n2d
-		local n2d_id = automata.get_player_setting(pname, "n2d")
-		if not n2d_id then rules.n2d = "8" end
-		elseif n2d_id == "1" then rules.n2d = "4"
-		elseif n2d_id == "2" then rules.n2d = "8"
-		end
+		local n2d = automata.get_player_setting(pname, "n2d")
+		if not n2d then rules.neighbors = 8 --with the dropdown on the form this default should never be used
+		else rules.neighbors = tonumber(n2d) end
 		
-		if not fields.code or fields.code == "" then fields.code = "23/3" end
-		local split = string.find(fields.code, "/")
-		if split then
-			-- take the values to the left and the values to the right @todo validation will be made moot by a stricter form
-			rules["survive"] = string.sub(fields.code, 1, split-1)
-			rules["birth"] = string.sub(fields.code, split+1)
-			
+		--code2d (must be in the format survive/birth, ie, 23/3)
+		local code2d = automata.get_player_setting(pname, "code2d")
+		if not code2d then rules.survive = "23"; rules.birth = "3" 
 		else
-			minetest.chat_send_player(pname, "the rule code should be in the format \"3/23\"; you said: "..fields.code)
-			return false
+			local split
+			split = string.find(code2d, "/")
+			if split then
+				-- take the values to the left and the values to the right
+				rules.survive = string.sub(code2d, 1, split-1)
+				rules.birth = string.sub(code2d, split+1)
+			else
+				minetest.show_popup(pname, "the rule code should be in the format \"23/3\"; you said: "..code2d) return false
+			end
 		end
 	end
 	
 	--fields specific to 3D
-	if tab == "3"  then
+	if tab == "3" then
 		--n3d
-		local n3d_id = automata.get_player_setting(pname, "n3d")
-		if not n3d_id then rules.n3d = "8" end
-		elseif n3d_id == "1" then rules.n3d = "6"
-		elseif n3d_id == "2" then rules.n3d = "18"
-		elseif n3d_id == "3" then rules.n3d = "26"
-		end
+		local n3d = automata.get_player_setting(pname, "n3d")
+		if not n3d then rules.neighbors = 26 --with the dropdown on the form this default should never be used
+		else rules.neighbors = tonumber(n3d) end
 		
-		--the rule
-		if not fields.code or fields.code == "" then fields.code = "23/3" end
-		local split = string.find(fields.code, "/")
-		if split then
-			-- take the values to the left and the values to the right @todo validation will be made moot by a stricter form
-			rules["survive"] = string.sub(fields.code, 1, split-1)
-			rules["birth"] = string.sub(fields.code, split+1)
-			
+		--code3d (must be in the format survive/birth, ie, 23/3)
+		local code3d = automata.get_player_setting(pname, "code3d")
+		if not code3d then rules.survive = "23"; rules.birth = "3" 
 		else
-			minetest.chat_send_player(pname, "the 3D rule code should be in the format \"3/2,3,23,24\"; you said: "..fields.code)
-			return false
+			local split
+			split = string.find(code3d, "/")
+			if split then
+				-- take the values to the left and the values to the right
+				rules.survive = string.sub(code3d, 1, split-1)
+				rules.birth = string.sub(code3d, split+1)
+			else
+				minetest.show_popup(pname, "the rule code should be in the format \"2,3,18/3,14\"; you said: "..code3d) return false
+			end
 		end
 	end
 	
+	if tab == "4" then
+		--assume neighbors - 8
+		rules.neighbors = 8
+		--process the rule override if passed in to rules_validate() as "rule_override"
+		if rule_override then
+			local split
+			split = string.find(rule_override, "/")
+			if split then
+				-- take the values to the left and the values to the right
+				rules.survive = string.sub(rule_override, 1, split-1)
+				rules.birth = string.sub(rule_override, split+1)
+			else
+				minetest.log(error, "something was wrong with #R line in the .lif file"..automata.lifs[lif_id]..".LIF") return false
+			end
+		else
+			--otherwise standard game of life rules
+			rules.survive = "23"
+			rules.birth = "3"
+		end
+	end
+	minetest.log("action","rules: "..dump(rules))
 	return rules
 end
 
@@ -377,14 +402,13 @@ RETURN: true/false
 DESC: calls rules_validate() can activate inactive_cells or initialize from a list
 TODO: heavy development of the formspec expected
 --]]
-function automata.new_pattern(pname, offsets)
+function automata.new_pattern(pname, offsets, rule_override)
 	-- form validation
-	local rule_id = automata.rules_validate(pname) --will be false if rules don't validate
-	--minetest.log("action","rule_registered: "..dump(automata.rule_registry[rule_id]))
-	if not rule_id then
-		minetest.chat_send_player(pname, "Something was wrong with your inputs!")
-		return false
-	else
+	local rules = automata.rules_validate(pname, rule_override) --will be false if rules don't validate
+	
+	minetest.log("action", "rules after validate: "..dump(rules))
+	
+	if rules then --in theory bad rule settings in the form should fail validation and throw a popup
 		--create the new pattern id empty
 		table.insert(automata.patterns, true) --placeholder to get id
 		local pattern_id = #automata.patterns
@@ -398,7 +422,6 @@ function automata.new_pattern(pname, offsets)
 			local player = minetest.get_player_by_name(pname)
 			local ppos = player:getpos()
 			ppos = {x=math.floor(ppos.x), y=math.floor(ppos.y), z=math.floor(ppos.z)} --remove decimals
-			local rules = automata.rule_registry[rule_id]
 			--minetest.log("action", "rules: "..dump(rules))
 			for k,offset in next, offsets do
 				local cell = {}
@@ -436,8 +459,8 @@ function automata.new_pattern(pname, offsets)
 			end
 		end
 		
-		--add the cell list to the active cell registry with the ttl, rules hash, and cell list
-		local values = {creator=pname, iteration=0, last_cycle=0, rule_id=rule_id, pmin=pmin, pmax=pmax, cell_count=cell_count, cell_list=hashed_cells}
+		--add the cell list to the active cell registry with the gens, rules hash, and cell list
+		local values = {creator=pname, iteration=0, last_cycle=0, rules=rules, pmin=pmin, pmax=pmax, cell_count=cell_count, cell_list=hashed_cells}
 		automata.patterns[pattern_id] = values --overwrite placeholder
 		
 		--automata.save_patterns_to_file() --PERSISTENCE: not working
@@ -639,17 +662,31 @@ function automata.show_rc_form(pname)
 		automata.player_settings[pname] = {tab=tab}
 	end
 	
-	--minetest.log("action", "tab: "..tab)
+	minetest.log("action", "tab: "..tab)
+	
+	--load the default fields for the forms
+	--gens
+	local gens = automata.get_player_setting(pname, "gens")
+	if not gens then gens = "" end
+	--trail
+	local trail = automata.get_player_setting(pname, "trail")
+	if not trail then trail = "" end
+	--final
+	local final = automata.get_player_setting(pname, "final")
+	if not final then final = "" end
+	--destructive
+	local destruct = automata.get_player_setting(pname, "destruct")
+	if not destruct then destruct = "false" end
 	
 	--set some formspec sections for re-use on all tabs
-	local form_header = 		"size[12,10]" ..
+	local f_header = 			"size[12,10]" ..
 								"tabheader[0,0;tab;1D, 2D, 3D, Import, Manage;"..tab.."]"
 	
 	--1D, 2D, 3D, Import
-	local grow_settings = 		"field[1,4;4,1;trail;Trail Block (eg: default:dirt);]" ..
-								"field[1,5;4,1;final;Final Block (eg: default:mese);]" ..
-								"checkbox[1,6;destruct;Destructive?]"..
-								"field[3,6;2,1;ttl;Generations (eg: 30);]"
+	local f_grow_settings = 	"field[1,4;4,1;trail;Trail Block (eg: default:dirt);"..trail.."]" ..
+								"field[1,5;4,1;final;Final Block (eg: default:mese);"..final.."]" ..
+								"checkbox[1,6;destruct;Destructive?;"..destruct.."]"..
+								"field[3,6;2,1;gens;Generations (eg: 30);"..gens.."]"
 	--1D,2D,and 3D
 	--make sure the inactive cell registry is not empty
 	local activate_section = 	"label[1,8;No inactive cells in map]"
@@ -657,64 +694,131 @@ function automata.show_rc_form(pname)
 		activate_section = 		"label[1,8;Activate inactive cells]"..
 								"button_exit[1,9;2,1;exit;Activate]"
 	end
-	local form_footer = 		activate_section ..
+	local f_footer = 			activate_section ..
 								"label[4.5,8;Start one cell here.]"..
 								"button_exit[4.5,9;2,1;exit;Single]"
-	--1D and 2D
-	local grow_distance = 		"field[1,3;4,1;growth;Grow Distance (-1, 0, 1, 2 ...);]"
-	local grow_axis = 			"dropdown[0.5,1.5;4,1;grow_axis;x,y,z;2]"
-	--1D
-	local code1d = 				"field[3,1;4,1;code1d;Rule# (eg: 30);]"
-	local axis = 				"dropdown[0.5,1.5;4,1;axis;x,y,z;1]"
-	--2D
-	local n2d = 				"dropdown[0.5,0.5;2;n2d;4,8;2]"
-	local code2d = 				"field[3,1;4,1;code2d;Rules (eg: 23/3);]"
-	--3D
-	local n3d = 				"dropdown[0.5,0.5;2;n3d;6,18,26;3]"
-	local code3d = 				"field[3,1;4,1;code3d;Rules (eg: 2,3,24,25/3,14,15,16);]"
 	
-	if tab == "1" then --1D menu
+	--then populate defaults common to 1D and 2D (and importing)
+	if tab == "1" or tab == "2" or tab == "4" then
+		--grow_distance
+		local grow_distance = automata.get_player_setting(pname, "grow_distance")
+		if not grow_distance then grow_distance = "" end
+		minetest.log("action", "distance: ".. grow_distance)
+		
+		--grow_axis (for 2D implies the calculation plane, for 1D cannot be the same as "axis")
+		local grow_axis_id
+		local grow_axis = automata.get_player_setting(pname, "grow_axis")
+		if not grow_axis then grow_axis_id = 2
+		else 
+			local idx = {x=1,y=2,z=3}
+			grow_axis_id = idx[grow_axis]
+		end
+		
+		local f_grow_distance = 		"field[1,3;4,1;grow_distance;Grow Distance (-1, 0, 1, 2 ...);"..grow_distance.."]"
+		local f_grow_axis = 			"dropdown[0.5,1.5;1,1;grow_axis;x,y,z;"..grow_axis_id.."]"
+		
+		--fields specific to 1D
+		if tab == "1"  then
+			--code1d (must be between 1 and 256 -- NKS rule numbers for 1D automata)
+			local code1d = automata.get_player_setting(pname, "code1d")
+			if not code1d then code1d = "" end
+			
+			--axis (this is the calculation axis and must not be the same as the grow_axis)
+			local axis_id
+			local axis = automata.get_player_setting(pname, "axis")
+			if not axis then axis_id = 1
+			else 
+				local idx = {x=1,y=2,z=3}
+				axis_id = idx[axis]
+			end
+			
+			local f_code1d = 			"field[3,1;4,1;code1d;Rule# (eg: 30);]"
+			local f_axis = 				"dropdown[0.5,0.5;1,1;axis;x,y,z;"..axis_id.."]"
+			
+			minetest.show_formspec(pname, "automata:rc_form", 
+								f_header ..
+								f_grow_settings ..
+								f_grow_axis .. 
+								f_grow_distance .. 
+								f_code1d .. f_axis ..
+								f_footer
+			)
+			return true
+		--fields specific to 2D and LIF import
+		elseif tab == "2" then
+			--n2d
+			local n2d_id
+			local n2d = automata.get_player_setting(pname, "n2d")
+			if not n2d then n2d_id = 2
+			else 
+				local idx = {}; idx["4"]=1; idx["8"]=2
+				n2d_id = idx[n2d]
+			end
+			
+			--code2d
+			local code2d = automata.get_player_setting(pname, "code2d")
+			if not code2d then code2d = "" end
+			
+			local f_n2d = 				"dropdown[0.5,0.5;2;n2d;4,8;"..n2d_id.."]"
+			local f_code2d = 			"field[3,1;4,1;code2d;Rules (eg: 23/3);"..code2d.."]"
+			
+			
+			minetest.show_formspec(pname, "automata:rc_form", 
+								f_header ..
+								f_grow_settings ..
+								f_grow_axis .. 
+								f_grow_distance .. 
+								f_n2d .. f_code2d ..
+								f_footer
+			)
+			return true
+		else --tab == 4
+			local lif_id = automata.get_player_setting(pname, "lif_id")
+			if not lif_id then lif_id = 1 else lif_id = tonumber(string.sub(lif_id, 5)) end
+			minetest.show_formspec(pname, "automata:rc_form", 
+									f_header ..
+									f_grow_settings ..
+									f_grow_axis .. 
+									f_grow_distance .. 
+									"textlist[8,0;4,7;lif_id;"..automata.lifnames..";"..lif_id.."]"..
+									"label[8,8;Import Selected LIF here]"..
+									"button_exit[8,9;2,1;exit;Import]"
+			)
+			return true
+		end
+	end
+	if tab == "3"  then
+		--n3d
+		local n3d_id
+		local n3d = automata.get_player_setting(pname, "n3d")
+		if not n3d then n3d_id = 3
+		else 
+			local idx = {}; idx["6"]=1; idx["18"]=2; idx["26"]=3
+			n3d_id = idx[n3d]
+		end
+		
+		--code3d
+		local code3d = automata.get_player_setting(pname, "code3d")
+		if not code3d then code3d = "" end
+		
+		local f_n3d = 				"dropdown[0.5,0.5;2;n3d;6,18,26;"..n3d_id.."]"
+		local f_code3d = 				"field[3,1;4,1;code3d;Rules (eg: 2,3,24,25/3,14,15,16);"..code3d.."]"
+		
 		minetest.show_formspec(pname, "automata:rc_form", 
-								form_header ..
-								grow_settings ..
-								grow_axis .. 
-								grow_distance .. 
-								code1d .. axis ..
-								form_footer
+								f_header ..
+								f_grow_settings ..
+								f_n3d .. f_code3d ..
+								f_footer
 		)
-	elseif tab == "2" then --2D menu
+		return true
+	end
+	if tab == "5" then --manage patterns
 		minetest.show_formspec(pname, "automata:rc_form", 
-								form_header ..
-								grow_settings ..
-								grow_axis .. 
-								grow_distance .. 
-								n2d .. code2d ..
-								form_footer
-		)
-	elseif tab == "3" then --3D menu
-		minetest.show_formspec(pname, "automata:rc_form", 
-								form_header ..
-								grow_settings ..
-								n3d .. code3d ..
-								form_footer
-		)
-	elseif tab == "4" then --Import from .LIF file
-		minetest.show_formspec(pname, "automata:rc_form", 
-								form_header ..
-								grow_settings ..
-								grow_axis .. 
-								grow_distance .. 
-								n2d .. code2d ..
-								"textlist[8,0;4,7;lif_list;"..automata.lifnames.."]"..
-								"label[8,8;Import Selected LIF here]"..
-								"button_exit[8,9;2,1;exit;Import]"
-		)
-	elseif tab == "5" then --manage patterns
-		minetest.show_formspec(pname, "automata:rc_form", 
-								form_header ..			
+								f_header ..			
 								"label[8,8;Pause]"..
 								"button_exit[8,9;2,1;exit;Pause]"
 		)
+		return true
 	end
 end
 
@@ -735,11 +839,10 @@ end
 
 function automata.import_lif(pname)
 		
-	local lifidx = 1
-	if automata.player_last_lif[pname] then
-		lifidx=automata.player_last_lif[pname]
-	end
-	local liffile = io.open(minetest.get_modpath("automata").."/lifs/"..automata.lifs[lifidx]..".LIF", "r")
+	local lif_id = automata.get_player_setting(pname, "lif_id")
+	if not lif_id then lif_id = 1 else lif_id = tonumber(string.sub(lif_id, 5)) end
+
+	local liffile = io.open(minetest.get_modpath("automata").."/lifs/"..automata.lifs[lif_id]..".LIF", "r")
 	if liffile then
 		local origin = nil
 		local offset_list = {}
@@ -773,9 +876,8 @@ function automata.import_lif(pname)
 		end
 		--minetest.log("action", "cells: "..dump(offset_list))
 		liffile:close()		
-		
-		if fields.code == "" and rule_override then fields.code = rule_override end
-		if automata.new_pattern(pname, fields, offset_list) then return true end
+			
+		if automata.new_pattern(pname, offset_list, rule_override) then return true end
 	end	
 	return false
 end
