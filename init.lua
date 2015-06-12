@@ -324,18 +324,18 @@ function automata.rules_validate(pname, rule_override)
 	local gens = automata.get_player_setting(pname, "gens")
 	if not gens then rules.gens = 100
 	elseif tonumber(gens) > 0 and tonumber(gens) < 1001 then rules.gens = tonumber(gens)
-	else minetest.show_popup(pname, "Generations must be between 1 and 1000; you said: "..gens) return false end
+	else automata.show_popup(pname, "Generations must be between 1 and 1000-- you said: "..gens) return false end
 	
 	--trail
 	local trail = automata.get_player_setting(pname, "trail")
 	if not trail then rules.trail = "air" 
-	elseif minetest.get_content_id(trail) then rules.trail = trail; print(minetest.get_content_id(trail))
-	else minetest.show_popup(pname, trail.." is not a valid block type") return false end
+	elseif minetest.get_content_id(trail) ~= 127 then rules.trail = trail; print(minetest.get_content_id(trail))
+	else automata.show_popup(pname, trail.." is not a valid block type") return false end
 	--final
 	local final = automata.get_player_setting(pname, "final")
 	if not final then rules.final = "stone" 
-	elseif minetest.get_content_id(final) then rules.final = final
-	else minetest.show_popup(pname, final.." is not a valid block type") return false end
+	elseif minetest.get_content_id(final) ~= 127 then rules.final = final
+	else automata.show_popup(pname, final.." is not a valid block type") return false end
 	
 	--destructive
 	local destruct = automata.get_player_setting(pname, "destruct")
@@ -349,7 +349,7 @@ function automata.rules_validate(pname, rule_override)
 		local grow_distance = automata.get_player_setting(pname, "grow_distance")
 		if not grow_distance then rules.grow_distance = 0
 		elseif tonumber(grow_distance) then rules.grow_distance = tonumber(grow_distance) --@todo take modf()
-		else minetest.show_popup(pname, "the grow distance needs to be an integer; you said: "..grow_distance) return false end
+		else automata.show_popup(pname, "the grow distance needs to be an integer-- you said: "..grow_distance) return false end
 		
 		--grow_axis (for 2D implies the calculation plane, for 1D cannot be the same as "axis")
 		local grow_axis = automata.get_player_setting(pname, "grow_axis")
@@ -365,14 +365,14 @@ function automata.rules_validate(pname, rule_override)
 		local code1d = automata.get_player_setting(pname, "code1d")
 		if not code1d then rules.code1d = 30 
 		elseif code1d > 0 and code1d <= 256 then rules.code1d = code1d
-		else minetest.show_popup(pname, "the 1D rule should be between 1 and 256; you said: "..code1d) return false end
+		else automata.show_popup(pname, "the 1D rule should be between 1 and 256-- you said: "..code1d) return false end
 		
 		--axis (this is the calculation axis and must not be the same as the grow_axis, only matters if tab=1)
 		local axis = automata.get_player_setting(pname, "axis")
 		if not axis then rules.axis = "x"  --with the dropdown on the form this default should never be used
 		else rules.axis = axis end
 		
-		if axis == grow_axis then minetest.show_popup(pname, "the grow axis and main axis cannot be the same") return false end
+		if axis == grow_axis then automata.show_popup(pname, "the grow axis and main axis cannot be the same") return false end
 		
 	end
 	
@@ -394,7 +394,7 @@ function automata.rules_validate(pname, rule_override)
 				rules.survive = string.sub(code2d, 1, split-1)
 				rules.birth = string.sub(code2d, split+1)
 			else
-				minetest.show_popup(pname, "the rule code should be in the format \"23/3\"; you said: "..code2d) return false
+				automata.show_popup(pname, "the rule code should be in the format \"23/3\"-- you said: "..code2d) return false
 			end
 		end
 	end
@@ -417,7 +417,7 @@ function automata.rules_validate(pname, rule_override)
 				rules.survive = string.sub(code3d, 1, split-1)
 				rules.birth = string.sub(code3d, split+1)
 			else
-				minetest.show_popup(pname, "the rule code should be in the format \"2,3,18/3,14\"; you said: "..code3d) return false
+				automata.show_popup(pname, "the rule code should be in the format \"2,3,18/3,14\"-- you said: "..code3d) return false
 			end
 		end
 	end
@@ -878,7 +878,7 @@ function automata.show_popup(pname, message)
 	minetest.show_formspec(pname, "automata:popup",
 								"size[10,8]" ..
 								"button_exit[1,1;2,1;exit;Back]"..
-								"textarea[1,3;9,6;desc;"..message.."]"
+								"label[1,3;"..message.."]"
 	)
 end
 
