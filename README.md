@@ -28,7 +28,7 @@ When you hit "Single" a single cell will be placed at your current location and 
 Alternatively you can select a Game of Life pattern from the right-hand list. Double clicking will give a description. Some of these patterns are extremely large and are actually more like huge machines made of smaller patterns set in precise relation to eachother. Clicking "Import" will create the selected pattern, with the selected rules, relative to your current location. (Most of these patterns are intended for standard Conway 23/3 rules but some are intended for variations on these rules. If that is the case the alternate rules, or any you have entered, will be used.)
 
 ## Known Issues
-Leaving the game leaves all active and inactive automata cells in the map dormant forever. Persistence will be in a future release.
+- Leaving the game leaves all active and inactive automata cells in the map dormant forever. Persistence will be in a future release.
 
 ## Next Steps in Development
 - improve the form:
@@ -46,6 +46,8 @@ Leaving the game leaves all active and inactive automata cells in the map dorman
 	- allow 1D patterns to grow faster otherwise they are a little boring
     - need a way to persist/resume after quit/crash: need to save some tables to file on update, reload and reactivate at mod load
 
+For other known issues and planned improvements see: https://github.com/bobombolo/automata/issues
+	
 ##New since v.0.0.3
 - improved form with management tab, better validation, persistence
 - 1D automata introduced

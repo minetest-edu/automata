@@ -392,7 +392,7 @@ function automata.rules_validate(pname, rule_override)
 				rules.survive = automata.explode(rules.survive)
 				rules.birth = string.sub(code2d, split+1)
 				rules.birth = automata.explode(rules.birth)
-				print("2D rules "..dump(rules.survive) .."/"..dump(rules.birth))
+				--print("2D rules "..dump(rules.survive) .."/"..dump(rules.birth))
 				--@TODO reassemble the rules in a garbage-free format and re-enter it to player_settings[pname].code2d
 			else
 				automata.show_popup(pname, "the rule code should be in the format \"23/3\"-- you said: "..code2d) return false
@@ -410,7 +410,7 @@ function automata.rules_validate(pname, rule_override)
 				rules.survive = automata.explode(rules.survive)
 				rules.birth = string.sub(rule_override, split+1)
 				rules.birth = automata.explode(rules.birth)
-				print("2D LIF rules "..dump(rules.survive) .."/"..dump(rules.birth))
+				--print("2D LIF rules "..dump(rules.survive) .."/"..dump(rules.birth))
 			else
 				minetest.log(error, "something was wrong with #R line in the .lif file"..automata.lifs[lif_id]..".LIF") return false
 			end
@@ -768,6 +768,15 @@ function automata.get_player_setting(pname, setting)
 end
 
 function automata.show_rc_form(pname)
+	local player = minetest.get_player_by_name(pname)
+	local ppos = player:getpos()
+	local degree = player:get_look_yaw()*180/math.pi - 90
+	if degree < 0 then degree = degree + 360 end
+	local dir
+	if     degree <= 45 or degree > 315 then dir = "+ Z"
+	elseif degree <= 135 then dir = "- X"
+	elseif degree <= 225 then dir = "- Z"
+	else   dir = "+ X" end
 	
 	local tab = automata.get_player_setting(pname, "tab")
 	if not tab then 
@@ -795,22 +804,24 @@ function automata.show_rc_form(pname)
 	
 	--set some formspec sections for re-use on all tabs
 	local f_header = 			"size[12,10]" ..
-								"tabheader[0,0;tab;1D, 2D, 3D, Import, Manage;"..tab.."]"
+								"tabheader[0,0;tab;1D, 2D, 3D, Import, Manage;"..tab.."]"..
+								"label[0,0;You are at x= "..math.floor(ppos.x)..
+								" y= "..math.floor(ppos.y).." z= "..math.floor(ppos.z).." and mostly facing "..dir.."]"
 	
 	--1D, 2D, 3D, Import
-	local f_grow_settings = 	"field[1,4;4,1;trail;Trail Block (eg: default:dirt);"..trail.."]" ..
-								"field[1,5;4,1;final;Final Block (eg: default:mese);"..final.."]" ..
-								"checkbox[1,6;destruct;Destructive?;"..destruct.."]"..
-								"field[3,6;2,1;gens;Generations (eg: 30);"..gens.."]"
+	local f_grow_settings = 	"field[1,5;4,1;trail;Trail Block (eg: dirt);"..minetest.formspec_escape(trail).."]" ..
+								"field[1,6;4,1;final;Final Block (eg: default:mese);"..minetest.formspec_escape(final).."]" ..
+								"checkbox[0.7,7.5;destruct;Destructive?;"..destruct.."]"..
+								"field[1,7;4,1;gens;Generations (eg: 30);"..minetest.formspec_escape(gens).."]"
 	--1D,2D,and 3D
 	--make sure the inactive cell registry is not empty
-	local activate_section = 	"label[1,8;No inactive cells in map]"
+	local activate_section = 	"label[1,8.5;No inactive cells in map]"
 	if next(automata.inactive_cells) then
-		activate_section = 		"label[1,8;Activate inactive cells]"..
+		activate_section = 		"label[1,8.5;Activate inactive cells]"..
 								"button_exit[1,9;2,1;exit;Activate]"
 	end
 	local f_footer = 			activate_section ..
-								"label[4.5,8;Start one cell here.]"..
+								"label[4.5,8.5;Start one cell here.]"..
 								"button_exit[4.5,9;2,1;exit;Single]"
 	
 	--then populate defaults common to 1D and 2D (and importing)
@@ -828,8 +839,9 @@ function automata.show_rc_form(pname)
 			grow_axis_id = idx[grow_axis]
 		end
 		
-		local f_grow_distance = 		"field[1,3;4,1;grow_distance;Grow Distance (-1, 0, 1, 2 ...);"..grow_distance.."]"
-		local f_grow_axis = 			"dropdown[0.5,1.5;1,1;grow_axis;x,y,z;"..grow_axis_id.."]"
+		local f_grow_distance = "field[1,4;4,1;grow_distance;Grow Distance (-1, 0, 1, 2 ...);"..minetest.formspec_escape(grow_distance).."]"
+		local f_grow_axis = 	"label[1,2.5; Growth Axis]"..
+								"dropdown[3,2.5;1,1;grow_axis;x,y,z;"..grow_axis_id.."]"
 		
 		--fields specific to 1D
 		if tab == "1"  then
@@ -846,8 +858,9 @@ function automata.show_rc_form(pname)
 				axis_id = idx[axis]
 			end
 			
-			local f_code1d = 			"field[3,1;4,1;code1d;Rule# (eg: 30);]"
-			local f_axis = 				"dropdown[0.5,0.5;1,1;axis;x,y,z;"..axis_id.."]"
+			local f_code1d = 			"field[6,1;2,1;code1d;Rule# (eg: 30);]"
+			local f_axis = 				"label[1,1.5; Main Axis]"..
+										"dropdown[3,1.5;1,1;axis;x,y,z;"..axis_id.."]"
 			
 			minetest.show_formspec(pname, "automata:rc_form", 
 								f_header ..
@@ -873,8 +886,9 @@ function automata.show_rc_form(pname)
 			local code2d = automata.get_player_setting(pname, "code2d")
 			if not code2d then code2d = "" end
 			
-			local f_n2d = 				"dropdown[0.5,0.5;2;n2d;4,8;"..n2d_id.."]"
-			local f_code2d = 			"field[3,1;4,1;code2d;Rules (eg: 23/3);"..code2d.."]"
+			local f_n2d = 				"label[1,0.5;Neighbors]"..
+										"dropdown[3,0.5;1,1;n2d;4,8;"..n2d_id.."]"
+			local f_code2d = 			"field[6,1;6,1;code2d;Rules (eg: 23/3);"..minetest.formspec_escape(code2d).."]"
 			
 			
 			minetest.show_formspec(pname, "automata:rc_form", 
@@ -895,7 +909,7 @@ function automata.show_rc_form(pname)
 									f_grow_axis .. 
 									f_grow_distance .. 
 									"textlist[8,0;4,7;lif_id;"..automata.lifnames..";"..lif_id.."]"..
-									"label[8,8;Import Selected LIF here]"..
+									"label[8,8.5;Import Selected LIF here]"..
 									"button_exit[8,9;2,1;exit;Import]"
 			)
 			return true
@@ -915,8 +929,9 @@ function automata.show_rc_form(pname)
 		local code3d = automata.get_player_setting(pname, "code3d")
 		if not code3d then code3d = "" end
 		
-		local f_n3d = 				"dropdown[0.5,0.5;2;n3d;6,18,26;"..n3d_id.."]"
-		local f_code3d = 				"field[3,1;4,1;code3d;Rules (eg: 2,3,24,25/3,14,15,16);"..code3d.."]"
+		local f_n3d = 		"label[1,0.5;Neighbors]"..
+							"dropdown[3,0.5;1,1;n3d;6,18,26;"..n3d_id.."]"
+		local f_code3d = 	"field[6,1;6,1;code3d;Rules (eg: 2,3,24,25/3,14,15,16);"..minetest.formspec_escape(code3d).."]"
 		
 		minetest.show_formspec(pname, "automata:rc_form", 
 								f_header ..
@@ -941,21 +956,24 @@ function automata.show_rc_form(pname)
 		if not pid_id then pid_id = 1 end
 		
 		local f_plist
-		if patterns == "" then f_plist = "label[5,0;no active patterns]"
-		else f_plist = 	"label[5,0;Your patterns]"..
-						"textlist[5,1;8,6;pid_id;"..patterns..";1]" end
+		if patterns == "" then f_plist = "label[1,1;no active patterns]"
+		else f_plist = 	"label[1,1;Your patterns]"..
+						"textlist[1,1.5;10,8;pid_id;"..patterns..";1]"..
+						"label[1,9.5;Single Click to Pause]"..
+						"label[5,9.5;Double Click to Resume]"
+		end
 		
 		minetest.show_formspec(pname, "automata:rc_form", 
-								f_header ..			
-								f_plist..
-								"label[1,1;Single Click to Pause]"..
-								"label[1,2;Double Click to Resume]"
+								f_header ..	f_plist
+								
 		)
 		return true
 	end
 end
 
 function automata.show_popup(pname, message)
+	--@TODO this popup isn't showing even though we GET HERE, was working at one time
+	
 	minetest.show_formspec(pname, "automata:popup",
 								"size[10,8]" ..
 								"button_exit[1,1;2,1;exit;Back]"..
