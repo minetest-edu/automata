@@ -24,8 +24,8 @@ When you hit "Activate" all inactive cells you have placed will start growing (t
 ### Mode 2, activating a single node at your current location
 When you hit "Single" a single cell will be placed at your current location and the rules you have filled out will be applied. This means the cell will die unless it has a zero in the survival rules: 0xx/xxx eg, 01234/14
 
-### Mode 3, importing a Game of Life entity from the supplied .LIF collection (from Al Hensel http://www.ibiblio.org/lifepatterns/lifebc.zip )
-Alternatively you can select a Game of Life pattern from the right-hand list. Double clicking will give a description. Some of these patterns are extremely large and are actually more like huge machines made of smaller patterns set in precise relation to eachother. Clicking "Import" will create the selected pattern, with the selected rules, relative to your current location. (Most of these patterns are intended for standard Conway 23/3 rules but some are intended for variations on these rules. If that is the case the alternate rules, or any you have entered, will be used.)
+### Mode 3, importing a Game of Life entity from the supplied .LIF collection 
+Alternatively you can select a Game of Life pattern from the right-hand list. Double clicking will give a description. Some of these patterns are extremely large and are actually more like huge machines made of smaller patterns set in precise relation to eachother. Clicking "Import" will create the selected pattern, with the selected rules, relative to your current location. (Most of these patterns are intended for standard Conway 23/3 rules but some are intended for variations on these rules. If that is the case the alternate rules, or any you have entered, will be used -- .LIF collection by Al Hensel http://www.ibiblio.org/lifepatterns/lifebc.zip )
 
 ## Known Issues
 - Leaving the game leaves all active and inactive automata cells in the map dormant forever. Persistence will be in a future release.
