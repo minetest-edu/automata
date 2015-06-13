@@ -530,9 +530,10 @@ function automata.new_pattern(pname, offsets, rule_override)
 		--add the cell list to the active cell registry with the gens, rules hash, and cell list
 		local values = {creator=pname, status="active", iteration=0, last_cycle=0, rules=rules, cell_count=cell_count, cell_list=hashed_cells}
 		automata.patterns[pattern_id] = values --overwrite placeholder
-		
+		return true
+	else 
+		return false 
 	end
-	return true
 end
 --[[ MINETEST CALLBACKS:--]]
 
@@ -859,7 +860,7 @@ function automata.show_rc_form(pname)
 				axis_id = idx[axis]
 			end
 			
-			local f_code1d = 			"field[6,1;2,1;code1d;Rule# (eg: 30);]"
+			local f_code1d = 			"field[6,1;2,1;code1d;Rule# (eg: 30);"..minetest.formspec_escape(code1d).."]"
 			local f_axis = 				"label[1,1.5; Main Axis]"..
 										"dropdown[3,1.5;1,1;axis;x,y,z;"..axis_id.."]"
 			
