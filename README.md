@@ -1,4 +1,4 @@
-# automata v.0.0.3
+# automata v.0.0.4
 ### A minetest mod for growing various cellular automata, including conway's game of life...
 
 ## Installation
