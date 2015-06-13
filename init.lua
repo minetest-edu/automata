@@ -205,7 +205,7 @@ function automata.grow(pattern_id)
 			--now we have a same neighbor count, apply life and death rules
 			local gpos = {}
 			--minetest.log("action", "rules.survive: "..rules.survive..", same_count: "..same_count)
-			if string.find(rules.survive, same_count) then
+			if rules.survive[same_count] then
 				--add to life list
 				gpos = {x=pos.x+growth_offset.x, y=pos.y+growth_offset.y, z=pos.z+growth_offset.z}
 				
@@ -265,7 +265,7 @@ function automata.grow(pattern_id)
 			end
 			local bpos = {}
 			--minetest.log("action", "rules.birth: "..rules.birth..", same_count: "..same_count)
-			if string.find(rules.birth, same_count) then
+			if rules.birth[same_count] then
 				--add to life list
 				bpos = {x=epos.x+growth_offset.x, y=epos.y+growth_offset.y, z=epos.z+growth_offset.z}
 				table.insert(life_list, bpos) --when node is actually set we will add to new_cell_list
@@ -335,7 +335,7 @@ function automata.rules_validate(pname, rule_override)
 	else automata.show_popup(pname, trail.." is not a valid block type") return false end
 	--final
 	local final = automata.get_player_setting(pname, "final")
-	if not final then rules.final = "stone" 
+	if not final then rules.final = rules.trail 
 	elseif minetest.get_content_id(final) ~= 127 then rules.final = final
 	else automata.show_popup(pname, final.." is not a valid block type") return false end
 	
@@ -383,36 +383,36 @@ function automata.rules_validate(pname, rule_override)
 			
 			--code2d (must be in the format survive/birth, ie, 23/3)
 			local code2d = automata.get_player_setting(pname, "code2d")
-			if not code2d then rules.survive = "23"; rules.birth = "3" 
+			if not code2d then code2d = "23/3" end
+			local split
+			split = string.find(code2d, "/")
+			if split then
+				-- take the values to the left and the values to the right
+				rules.survive = string.sub(code2d, 1, split-1)
+				rules.survive = automata.explode(rules.survive)
+				rules.birth = string.sub(code2d, split+1)
+				rules.birth = automata.explode(rules.birth)
+				print("2D rules "..dump(rules.survive) .."/"..dump(rules.birth))
+				--@TODO reassemble the rules in a garbage-free format and re-enter it to player_settings[pname].code2d
 			else
-				local split
-				split = string.find(code2d, "/")
-				if split then
-					-- take the values to the left and the values to the right
-					rules.survive = string.sub(code2d, 1, split-1)
-					rules.birth = string.sub(code2d, split+1)
-				else
-					automata.show_popup(pname, "the rule code should be in the format \"23/3\"-- you said: "..code2d) return false
-				end
+				automata.show_popup(pname, "the rule code should be in the format \"23/3\"-- you said: "..code2d) return false
 			end
 		elseif tab == "4" then
-			--assume neighbors - 8
+			--assume neighbors = 8, LIF files assume this and default to conway rules but may override with #R
 			rules.neighbors = 8
 			--process the rule override if passed in to rules_validate() as "rule_override"
-			if rule_override then
-				local split
-				split = string.find(rule_override, "/")
-				if split then
-					-- take the values to the left and the values to the right
-					rules.survive = string.sub(rule_override, 1, split-1)
-					rules.birth = string.sub(rule_override, split+1)
-				else
-					minetest.log(error, "something was wrong with #R line in the .lif file"..automata.lifs[lif_id]..".LIF") return false
-				end
+			if not rule_override then rule_override = "23/3" end
+			local split
+			split = string.find(rule_override, "/")
+			if split then
+				-- take the values to the left and the values to the right
+				rules.survive = string.sub(rule_override, 1, split-1)
+				rules.survive = automata.explode(rules.survive)
+				rules.birth = string.sub(rule_override, split+1)
+				rules.birth = automata.explode(rules.birth)
+				print("2D LIF rules "..dump(rules.survive) .."/"..dump(rules.birth))
 			else
-				--otherwise standard game of life rules
-				rules.survive = "23"
-				rules.birth = "3"
+				minetest.log(error, "something was wrong with #R line in the .lif file"..automata.lifs[lif_id]..".LIF") return false
 			end
 		end
 	elseif tab == "3" then --fields specific to 3D
@@ -423,17 +423,20 @@ function automata.rules_validate(pname, rule_override)
 		
 		--code3d (must be in the format survive/birth, ie, 23/3)
 		local code3d = automata.get_player_setting(pname, "code3d")
-		if not code3d then rules.survive = "23"; rules.birth = "3" 
+		if not code3d then code3d = "2,3/3" end 
+		local split
+		split = string.find(code3d, "/")
+		if split then
+			-- take the values to the left and the values to the right
+			rules.survive = string.sub(code3d, 1, split-1)
+			rules.survive = automata.explode(rules.survive, " ,")
+			rules.birth = string.sub(code3d, split+1)
+			rules.birth = automata.explode(rules.birth, " ,")
+			--print("3D rules "..dump(rules.survive) .."/"..dump(rules.birth))
+			--@TODO reassemble the rules in a garbage-free format and re-enter it to player_settings[pname].code3d
 		else
-			local split
-			split = string.find(code3d, "/")
-			if split then
-				-- take the values to the left and the values to the right
-				rules.survive = string.sub(code3d, 1, split-1)
-				rules.birth = string.sub(code3d, split+1)
-			else
-				automata.show_popup(pname, "the rule code should be in the format \"2,3,18/3,14\"-- you said: "..code3d) return false
-			end
+			automata.show_popup(pname, "the rule code should be in the format \"2,3,18/3,14\"-- you said: "..code3d)
+			return false
 		end
 	end
 	--minetest.log("action","rules: "..dump(rules))
@@ -441,6 +444,7 @@ function automata.rules_validate(pname, rule_override)
 end
 
 -- function to convert integer to bigendian binary string needed frequently to convert from NKS codes to usefulness
+-- modified from http://stackoverflow.com/a/26702880/3765399
 function automata.toBits(num, bits)
     -- returns a table of bits, most significant first.
     bits = bits or select(2,math.frexp(num))
@@ -450,6 +454,25 @@ function automata.toBits(num, bits)
         num=(num-t[b])/2
     end
     return t
+end
+
+--explode function modified from http://stackoverflow.com/a/29497100/3765399 for converting code3d inputs to tables
+-- with delimiter set to ", " this will discard all non-numbers, and accept commas and/or spaces as delimiters
+-- with no delimiter set, the entire string is exploded character by character
+function automata.explode(source, delimiters)
+	local elements = {}
+	if not delimiters then --then completely explode every character
+		delimiters = " "
+		local temp = ""
+		for i=1, string.len(source) do
+			temp = temp .. " "..string.sub(source, i, i)
+		end
+		source = temp.." " --extra space to avoid nil
+		--print("temp before actual explode: "..source)
+	end
+	local pattern = '([^'..delimiters..']+)'
+	string.gsub(source, pattern, function(value) if tonumber(value) then elements[tonumber(value)] = true; end  end);
+	return elements
 end
 
 --[[
@@ -936,7 +959,7 @@ function automata.show_popup(pname, message)
 	minetest.show_formspec(pname, "automata:popup",
 								"size[10,8]" ..
 								"button_exit[1,1;2,1;exit;Back]"..
-								"label[1,3;"..message.."]"
+								"label[1,3;"..minetest.formspec_escape(message).."]"
 	)
 end
 
