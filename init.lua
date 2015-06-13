@@ -69,14 +69,14 @@ function automata.grow(pattern_id)
 	-- 1D neighbors
 	if rules.neighbors ==2 then
 		if rules.axis == "x" then
-			neighborhood.e = {x=  1,y=  0,z=  0}
-			neighborhood.w = {x= -1,y=  0,z=  0}
+			neighborhood.plus = {x=  1,y=  0,z=  0}
+			neighborhood.minus = {x= -1,y=  0,z=  0}
 		elseif rules.axis == "z" then
-			neighborhood.n = {x=  0,y=  0,z=  1}
-			neighborhood.s = {x=  0,y=  0,z= -1}
+			neighborhood.plus = {x=  0,y=  0,z=  1}
+			neighborhood.minus = {x=  0,y=  0,z= -1}
 		else --rules.axis == "y"
-			neighborhood.t = {x=  0,y=  1,z=  0}
-			neighborhood.b = {x=  0,y= -1,z=  0}
+			neighborhood.plus = {x=  0,y=  1,z=  0}
+			neighborhood.minus = {x=  0,y= -1,z=  0}
 		end
 	else --2D and 3D neighbors
 		if rules.neighbors == 4 or rules.neighbors == 8 -- 2D von Neumann neighborhood
@@ -145,61 +145,131 @@ function automata.grow(pattern_id)
 	
 	--loop through cell list
 	for pos_hash,v in next, automata.patterns[pattern_id].cell_list do
-		local same_count = 0
 		local pos = minetest.get_position_from_hash(pos_hash) --@todo, figure out how to add / subtract hashes
-		for k, offset in next, neighborhood do
-			--add the offsets to the position @todo although this isn't bad
-			local npos = {x=pos.x+offset.x, y=pos.y+offset.y, z=pos.z+offset.z}
-			--look in the cell list
-			if automata.patterns[pattern_id].cell_list[minetest.hash_node_position(npos)] then
-				same_count = same_count +1
+		
+		if rules.neighbors == 2 then --non-totalistic rules
+			local code1d = automata.toBits(rules.code1d, 8) --rules 3,4,7,8 apply to already-on cells
+			--test the plus neighbor
+			local pluspos  = {x=pos.x+neighborhood.plus.x,  y=pos.y+neighborhood.plus.y,  z=pos.z+neighborhood.plus.z}
+			local minuspos = {x=pos.x+neighborhood.minus.x, y=pos.y+neighborhood.minus.y, z=pos.z+neighborhood.minus.z}
+			local plus, minus
+			if automata.patterns[pattern_id].cell_list[minetest.hash_node_position(pluspos)] then
+				plus = 1
 			else
-				empty_neighbors[minetest.hash_node_position(npos)] = true
+				empty_neighbors[minetest.hash_node_position(pluspos)] = true
 			end
-		end
-		--now we have a same neighbor count, apply life and death rules
-		local gpos = {}
-		--minetest.log("action", "rules.survive: "..rules.survive..", same_count: "..same_count)
-		if string.find(rules.survive, same_count) then
-			--add to life list
-			gpos = {x=pos.x+growth_offset.x, y=pos.y+growth_offset.y, z=pos.z+growth_offset.z}
-			
-			if rules.grow_distance ~= 0 then
-				table.insert(life_list, gpos) --when node is actually set we will add to new_cell_list
-				table.insert(death_list, pos) --with grow_distance ~= 0, the old pos dies leaving rules.trail
+			--test the minus neighbor
+			if automata.patterns[pattern_id].cell_list[minetest.hash_node_position(minuspos)] then
+				minus = 1
 			else
-				--in the case that this is the final iteration, we need to pass it to the life list afterall
-				ccount = ccount + 1
-				if is_final == 1 then
-					table.insert(life_list, pos) --when node is actually set we will add to new_cell_list
+				empty_neighbors[minetest.hash_node_position(minuspos)] = true
+			end
+			if ( not plus and not minus and code1d[3]==1 )
+			or (     plus and not minus and code1d[4]==1 )
+			or ( not plus and     minus and code1d[7]==1 )
+			or (     plus and     minus and code1d[8]==1 ) then
+				--add to life list
+				local gpos = {x=pos.x+growth_offset.x, y=pos.y+growth_offset.y, z=pos.z+growth_offset.z}
+				
+				if rules.grow_distance ~= 0 then
+					table.insert(life_list, gpos) --when node is actually set we will add to new_cell_list
+					table.insert(death_list, pos) --with grow_distance ~= 0, the old pos dies leaving rules.trail
 				else
-					new_cell_list[pos_hash] = true --if grow_distance==0 we just let it be but add to new_cell_list
+					--in the case that this is the final iteration, we need to pass it to the life list afterall
+					ccount = ccount + 1
+					if is_final == 1 then
+						table.insert(life_list, pos) --when node is actually set we will add to new_cell_list
+					else
+						new_cell_list[pos_hash] = true --if grow_distance==0 we just let it be but add to new_cell_list
+					end
+				end
+				
+			else
+				--add to death list, regardless of grow_distance setting
+				table.insert(death_list, pos)
+			end
+			
+		else --totalistic ruleset
+			local same_count = 0
+			
+			for k, offset in next, neighborhood do
+				--add the offsets to the position @todo although this isn't bad
+				local npos = {x=pos.x+offset.x, y=pos.y+offset.y, z=pos.z+offset.z}
+				--look in the cell list
+				if automata.patterns[pattern_id].cell_list[minetest.hash_node_position(npos)] then
+					same_count = same_count +1
+				else
+					empty_neighbors[minetest.hash_node_position(npos)] = true
 				end
 			end
-			
-		else
-			--add to death list, regardless of grow_distance setting
-			table.insert(death_list, pos)
-		end
-	end
-	--loop through the new total neighbors list
-	for epos_hash,v in next, empty_neighbors do
-		local same_count = 0
-		local epos = minetest.get_position_from_hash(epos_hash)
-		for k, offset in next, neighborhood do
-			--add the offsets to the position @todo although this isn't bad
-			local npos = {x=epos.x+offset.x, y=epos.y+offset.y, z=epos.z+offset.z}
-			--look in the cell list
-			if automata.patterns[pattern_id].cell_list[minetest.hash_node_position(npos)] then
-				same_count = same_count +1
+			--now we have a same neighbor count, apply life and death rules
+			local gpos = {}
+			--minetest.log("action", "rules.survive: "..rules.survive..", same_count: "..same_count)
+			if string.find(rules.survive, same_count) then
+				--add to life list
+				gpos = {x=pos.x+growth_offset.x, y=pos.y+growth_offset.y, z=pos.z+growth_offset.z}
+				
+				if rules.grow_distance ~= 0 then
+					table.insert(life_list, gpos) --when node is actually set we will add to new_cell_list
+					table.insert(death_list, pos) --with grow_distance ~= 0, the old pos dies leaving rules.trail
+				else
+					--in the case that this is the final iteration, we need to pass it to the life list afterall
+					ccount = ccount + 1
+					if is_final == 1 then
+						table.insert(life_list, pos) --when node is actually set we will add to new_cell_list
+					else
+						new_cell_list[pos_hash] = true --if grow_distance==0 we just let it be but add to new_cell_list
+					end
+				end
+				
+			else
+				--add to death list, regardless of grow_distance setting
+				table.insert(death_list, pos)
 			end
 		end
-		local bpos = {}
-		--minetest.log("action", "rules.birth: "..rules.birth..", same_count: "..same_count)
-		if string.find(rules.birth, same_count) then
-			--add to life list
-			bpos = {x=epos.x+growth_offset.x, y=epos.y+growth_offset.y, z=epos.z+growth_offset.z}
-			table.insert(life_list, bpos) --when node is actually set we will add to new_cell_list
+	end
+	--loop through the new total neighbors list looking for births
+	for epos_hash,v in next, empty_neighbors do
+		local epos = minetest.get_position_from_hash(epos_hash) --@todo, figure out how to add / subtract hashes
+		if rules.neighbors == 2 then --non-totalistic rules
+			local code1d = automata.toBits(rules.code1d, 8) --rules 1,2,5,6 apply to already-on cells and 1 is un-implementable
+			--test the plus neighbor
+			local pluspos  = {x=epos.x+neighborhood.plus.x,  y=epos.y+neighborhood.plus.y,  z=epos.z+neighborhood.plus.z}
+			local minuspos = {x=epos.x+neighborhood.minus.x, y=epos.y+neighborhood.minus.y, z=epos.z+neighborhood.minus.z}
+			local plus, minus
+			if automata.patterns[pattern_id].cell_list[minetest.hash_node_position(pluspos)] then
+				plus = 1
+			end
+			--test the minus neighbor
+			if automata.patterns[pattern_id].cell_list[minetest.hash_node_position(minuspos)] then
+				minus = 1
+			end
+			if ( not plus and not minus and code1d[1]==1 ) --could skip this as we already know it has at least one neighbor
+			or (     plus and not minus and code1d[2]==1 )
+			or ( not plus and     minus and code1d[5]==1 )
+			or (     plus and     minus and code1d[6]==1 ) then
+				--add to life list
+				bpos = {x=epos.x+growth_offset.x, y=epos.y+growth_offset.y, z=epos.z+growth_offset.z}
+				table.insert(life_list, bpos) --when node is actually set we will add to new_cell_list
+			end
+			
+		else --totalistic ruleset
+			local same_count = 0
+			for k, offset in next, neighborhood do
+				--add the offsets to the position @todo although this isn't bad
+				local npos = {x=epos.x+offset.x, y=epos.y+offset.y, z=epos.z+offset.z}
+				--look in the cell list
+				if automata.patterns[pattern_id].cell_list[minetest.hash_node_position(npos)] then
+					same_count = same_count +1
+				end
+			end
+			local bpos = {}
+			--minetest.log("action", "rules.birth: "..rules.birth..", same_count: "..same_count)
+			if string.find(rules.birth, same_count) then
+				--add to life list
+				bpos = {x=epos.x+growth_offset.x, y=epos.y+growth_offset.y, z=epos.z+growth_offset.z}
+				table.insert(life_list, bpos) --when node is actually set we will add to new_cell_list
+			end
 		end
 	end
 	
@@ -287,52 +357,65 @@ function automata.rules_validate(pname, rule_override)
 		local grow_axis = automata.get_player_setting(pname, "grow_axis")
 		if not grow_axis then rules.grow_axis = "y" --with the dropdown on the form this default should never be used
 		else rules.grow_axis = grow_axis end
-	end
-	
-	--fields specific to 1D
-	if tab == "1"  then
-		rules.neighbors = 2 --implied (neighbors is used by grow() to determine dimensionality)
 		
-		--code1d (must be between 1 and 256 -- NKS rule numbers for 1D automata)
-		local code1d = automata.get_player_setting(pname, "code1d")
-		if not code1d then rules.code1d = 30 
-		elseif code1d > 0 and code1d <= 256 then rules.code1d = code1d
-		else automata.show_popup(pname, "the 1D rule should be between 1 and 256-- you said: "..code1d) return false end
-		
-		--axis (this is the calculation axis and must not be the same as the grow_axis, only matters if tab=1)
-		local axis = automata.get_player_setting(pname, "axis")
-		if not axis then rules.axis = "x"  --with the dropdown on the form this default should never be used
-		else rules.axis = axis end
-		
-		if axis == grow_axis then automata.show_popup(pname, "the grow axis and main axis cannot be the same") return false end
-		
-	end
-	
-	--fields specific to 2D
-	if tab == "2" then
-		--n2d
-		local n2d = automata.get_player_setting(pname, "n2d")
-		if not n2d then rules.neighbors = 8 --with the dropdown on the form this default should never be used
-		else rules.neighbors = tonumber(n2d) end
-		
-		--code2d (must be in the format survive/birth, ie, 23/3)
-		local code2d = automata.get_player_setting(pname, "code2d")
-		if not code2d then rules.survive = "23"; rules.birth = "3" 
-		else
-			local split
-			split = string.find(code2d, "/")
-			if split then
-				-- take the values to the left and the values to the right
-				rules.survive = string.sub(code2d, 1, split-1)
-				rules.birth = string.sub(code2d, split+1)
+		--fields specific to 1D
+		if tab == "1"  then
+			rules.neighbors = 2 --implied (neighbors is used by grow() to determine dimensionality)
+			
+			--code1d (must be between 0 and 255 -- NKS rule numbers for 1D automata)
+			local code1d = automata.get_player_setting(pname, "code1d")
+			if not code1d then rules.code1d = 30 
+			elseif tonumber(code1d) >= 0 and tonumber(code1d) <= 255 then rules.code1d = tonumber(code1d)
+			else automata.show_popup(pname, "the 1D rule should be between 0 and 255-- you said: "..code1d) return false end
+			
+			--axis (this is the calculation axis and must not be the same as the grow_axis, only matters if tab=1)
+			local axis = automata.get_player_setting(pname, "axis")
+			if not axis then rules.axis = "x"  --with the dropdown on the form this default should never be used
+			else rules.axis = axis end
+			
+			if axis == grow_axis then automata.show_popup(pname, "the grow axis and main axis cannot be the same") return false end
+			
+		elseif tab == "2" then--fields specific to 2D
+			--n2d
+			local n2d = automata.get_player_setting(pname, "n2d")
+			if not n2d then rules.neighbors = 8 --with the dropdown on the form this default should never be used
+			else rules.neighbors = tonumber(n2d) end
+			
+			--code2d (must be in the format survive/birth, ie, 23/3)
+			local code2d = automata.get_player_setting(pname, "code2d")
+			if not code2d then rules.survive = "23"; rules.birth = "3" 
 			else
-				automata.show_popup(pname, "the rule code should be in the format \"23/3\"-- you said: "..code2d) return false
+				local split
+				split = string.find(code2d, "/")
+				if split then
+					-- take the values to the left and the values to the right
+					rules.survive = string.sub(code2d, 1, split-1)
+					rules.birth = string.sub(code2d, split+1)
+				else
+					automata.show_popup(pname, "the rule code should be in the format \"23/3\"-- you said: "..code2d) return false
+				end
+			end
+		elseif tab == "4" then
+			--assume neighbors - 8
+			rules.neighbors = 8
+			--process the rule override if passed in to rules_validate() as "rule_override"
+			if rule_override then
+				local split
+				split = string.find(rule_override, "/")
+				if split then
+					-- take the values to the left and the values to the right
+					rules.survive = string.sub(rule_override, 1, split-1)
+					rules.birth = string.sub(rule_override, split+1)
+				else
+					minetest.log(error, "something was wrong with #R line in the .lif file"..automata.lifs[lif_id]..".LIF") return false
+				end
+			else
+				--otherwise standard game of life rules
+				rules.survive = "23"
+				rules.birth = "3"
 			end
 		end
-	end
-	
-	--fields specific to 3D
-	if tab == "3" then
+	elseif tab == "3" then --fields specific to 3D
 		--n3d
 		local n3d = automata.get_player_setting(pname, "n3d")
 		if not n3d then rules.neighbors = 26 --with the dropdown on the form this default should never be used
@@ -353,29 +436,20 @@ function automata.rules_validate(pname, rule_override)
 			end
 		end
 	end
-	
-	if tab == "4" then
-		--assume neighbors - 8
-		rules.neighbors = 8
-		--process the rule override if passed in to rules_validate() as "rule_override"
-		if rule_override then
-			local split
-			split = string.find(rule_override, "/")
-			if split then
-				-- take the values to the left and the values to the right
-				rules.survive = string.sub(rule_override, 1, split-1)
-				rules.birth = string.sub(rule_override, split+1)
-			else
-				minetest.log(error, "something was wrong with #R line in the .lif file"..automata.lifs[lif_id]..".LIF") return false
-			end
-		else
-			--otherwise standard game of life rules
-			rules.survive = "23"
-			rules.birth = "3"
-		end
-	end
 	--minetest.log("action","rules: "..dump(rules))
 	return rules
+end
+
+-- function to convert integer to bigendian binary string needed frequently to convert from NKS codes to usefulness
+function automata.toBits(num, bits)
+    -- returns a table of bits, most significant first.
+    bits = bits or select(2,math.frexp(num))
+    local t={} -- will contain the bits        
+    for b=1,bits,1 do --left to right binary table
+        t[b]=math.fmod(num,2)
+        num=(num-t[b])/2
+    end
+    return t
 end
 
 --[[
