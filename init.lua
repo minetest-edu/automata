@@ -305,6 +305,7 @@ function automata.grow(pattern_id)
 	automata.patterns[pattern_id].pmax = new_pmax
 	automata.patterns[pattern_id].cell_count = ccount
 	automata.patterns[pattern_id].cell_list = new_cell_list
+	automata.patterns[pattern_id].timer = string.format("%.2fms", (os.clock() - t1) * 1000)
 	return true
 end
 
