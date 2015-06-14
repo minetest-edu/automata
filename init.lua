@@ -24,6 +24,55 @@ PERSISTENCE: this file is persisted to a file on change and loaded at mod start
 --]]
 automata.inactive_cells = {}
 
+--[[the nodes]]--
+-- new cell that requires activation
+minetest.register_node("automata:inactive", {
+	description = "Programmable Automata",
+	tiles = {"inactive.png"},
+	light_source = 3,
+	groups = {oddly_breakable_by_hand=1},
+	
+	on_construct = function(pos) --@todo this is not getting called by worldedit 
+		--local n = minetest.get_node(pos)
+		local meta = minetest.get_meta(pos)
+		meta:set_string("infotext", "\"Inactive Automata\"")
+		--register the cell in the cell registry
+		automata.inactive_cells[minetest.hash_node_position(pos)] = true
+		--minetest.log("action", "inactive: "..dump(automata.inactive_cells))
+	end,
+	on_dig = function(pos)
+		--remove from the inactive cell registry
+		if automata.inactive_cells[minetest.hash_node_position(pos)] then
+			automata.inactive_cells[minetest.hash_node_position(pos)] = nil end
+		--minetest.log("action", "inactive: "..dump(automata.inactive_cells))
+		minetest.set_node(pos, {name="air"})
+		return true
+	end,
+})
+
+-- an activated automata cell -- further handling of this node done by grow() via globalstep
+minetest.register_node("automata:active", {
+	description = "Active Automata",
+	tiles = {"active.png"},
+	drop = { max_items = 1, items = { "automata.inactive" } }, -- change back to inactive when dug 
+	light_source = 5,
+	groups = {oddly_breakable_by_hand=1, not_in_creative_inventory=1},
+	on_dig = function(pos)
+		--get the pattern ID from the meta and remove the cell from the pattern table
+		for pattern_id,values in next, automata.patterns do
+			for pos_hash,v in next, values.cell_list do
+				if minetest.hash_node_position(pos) == pos_hash then
+					automata.patterns[pattern_id].cell_list[minetest.hash_node_position(pos)]= nil
+					--@todo update the cell count and the pmin and pmax
+				end
+			end
+		end
+		minetest.set_node(pos, {name="air"})
+		return true
+	end,
+})
+
+
 --[[
 METHOD: automata.grow(pattern_id)
 RETURN: nothing yet
@@ -283,19 +332,22 @@ function automata.grow(pattern_id)
 	--  VOXEL MANIP
 	---------------------------------------------------
 	local vm = minetest.get_voxel_manip()
-	-- need to define an area that will include the patter plus all neighbors and the growth, for simplicity we do:
-	local emin, emax = vm:read_from_map({pmin.x-growth_offset.x, pmin.y-growth_offset.y, pmin.z-growth_offset.z},
-										{pmax.x+growth_offset.x, pmax.y+growth_offset.y, pmax.z+growth_offset.z})
+	-- need to define an area that will include the pattern plus all neighbors and the growth, for simplicity we do:
+	local e; if not rules.grow_distance then e = 1 else e = math.abs(rules.grow_distance) end
+	local emin, emax = vm:read_from_map({x=pmin.x-e,
+										 y=pmin.y-e,
+										 z=pmin.z-e},
+										{x=pmax.x+e,
+										 y=pmax.y+e,
+										 z=pmax.z+e}
+										)
 	local area = VoxelArea:new({MinEdge=emin, MaxEdge=emax})
 	local data = vm:get_data()
 	
 	--set the nodes for deaths
 	for _,dpos in next, death_list do
 		local vi = area:index(dpos.x, dpos.y, dpos.z)
-		local nodid = data[vi]
-		if nodid == minetest.get_content_id("automata:active") then --this is redundant, we know it is
-			data[vi] = minetest.get_content_id(rules.trail)
-		end
+		data[vi] = minetest.get_content_id(rules.trail)
 	end
 	--set the nodes for births
 	for _,bpos in next, life_list do --@todo why is this processing an empty table life_list!?
@@ -593,15 +645,11 @@ function automata.new_pattern(pname, offsets, rule_override)
 		local emin, emax = vm:read_from_map(pmin, pmax)
 		local area = VoxelArea:new({MinEdge=emin, MaxEdge=emax})
 		local data = vm:get_data()
-		
 		for pos_hash,_ in pairs(hashed_cells) do --@todo check ownership of node? lock registry?
 			local pos = minetest.get_position_from_hash(pos_hash)
 		
 			local vi = area:index(pos.x, pos.y, pos.z)
-			local nodid = data[vi]
-			if nodid == minetest.get_content_id("automata:inactive") then --this is redundant, we know it is
-				data[vi] = minetest.get_content_id("automata:active")
-			end
+			data[vi] = minetest.get_content_id("automata:active")
 			cell_count = cell_count + 1
 		end
 
@@ -618,7 +666,6 @@ function automata.new_pattern(pname, offsets, rule_override)
 		return false 
 	end
 end
---[[ MINETEST CALLBACKS:--]]
 
 -- REGISTER GLOBALSTEP
 local timer = 0
@@ -640,68 +687,6 @@ minetest.register_globalstep(function(dtime)
 	timer = 0
 	end
 end)
-
--- a generic node type for active cells
-minetest.register_node("automata:active", {
-	description = "Active Automaton",
-	tiles = {"active.png"},
-	light_source = 5,
-	groups = {	live_automata = 1,
-				oddly_breakable_by_hand=1,
-				not_in_creative_inventory = 1 --only programmable nodes appear in the inventory
-	},
-})
-
-
---[[  FOR THE CREATION OF A PROGRAMMABLE BLOCK,
-      AND IT'S ACTIVATION AS A PATTERN --]]
-
--- new block that requires activation
-minetest.register_node("automata:inactive", {
-	description = "Programmable Automata",
-	tiles = {"inactive.png"},
-	light_source = 3,
-	groups = {oddly_breakable_by_hand=1},
-	
-	on_construct = function(pos) --@todo this is not getting called by worldedit 
-		--local n = minetest.get_node(pos)
-		local meta = minetest.get_meta(pos)
-		meta:set_string("infotext", "\"Inactive Automata\"")
-		--register the cell in the cell registry
-		automata.inactive_cells[minetest.hash_node_position(pos)] = true
-		--minetest.log("action", "inactive: "..dump(automata.inactive_cells))
-	end,
-	on_dig = function(pos)
-		--remove from the inactive cell registry
-		if automata.inactive_cells[minetest.hash_node_position(pos)] then
-			automata.inactive_cells[minetest.hash_node_position(pos)] = nil end
-		--minetest.log("action", "inactive: "..dump(automata.inactive_cells))
-		minetest.set_node(pos, {name="air"})
-		return true
-	end,
-})
-
--- an activated automata block -- further handling of this node done by globalstep
-minetest.register_node("automata:active", {
-	description = "Active Automata",
-	tiles = {"active.png"},
-	drop = { max_items = 1, items = { "automata.inactive" } }, -- change back to inactive when dug 
-	light_source = 5,
-	groups = {oddly_breakable_by_hand=1, not_in_creative_inventory=1},
-	on_dig = function(pos)
-		--get the pattern ID from the meta and remove the cell from the pattern table
-		for pattern_id,values in next, automata.patterns do
-			for pos_hash,v in next, values.cell_list do
-				if minetest.hash_node_position(pos) == pos_hash then
-					automata.patterns[pattern_id].cell_list[minetest.hash_node_position(pos)]= nil
-					--@todo update the cell count and the pmin and pmax
-				end
-			end
-		end
-		minetest.set_node(pos, {name="air"})
-		return true
-	end,
-})
 
 -- the controller for activating cells
 minetest.register_tool("automata:remote" , {

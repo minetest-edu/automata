@@ -35,6 +35,7 @@ Alternatively you can select a Game of Life pattern from the right-hand list. Do
     - field for conversion of NKS codes to readable codes
     - buttons for presets and /or a list of previously used rules
     - way to import saved schems or use //set or //mix (worldedit isn't running on_construct)
+	- importing from a larger library of saved patterns (.rle, .cells and .lif v1.06 support) http://conwaylife.com/wiki/Main_Page
 	- an "Admin" tab visible to players with the 'automata' priv to modify default settings
 
 -new automata types:
@@ -58,7 +59,7 @@ For other known issues and planned improvements see: https://github.com/bobombol
 
 
 ##New since v.0.0.2
-- menu for creating Game of Life entities from a library of .lif files at current location
+- menu for creating Game of Life entities from a library of .lif v.1.05 files at current location
 
 ##New since v.0.0.1
 - multiple cell activation solved with Remote Control
