@@ -277,27 +277,49 @@ function automata.grow(pattern_id)
 		end
 	end
 	
+	local pmin = automata.patterns[pattern_id].pmin
+	local pmax = automata.patterns[pattern_id].pmax
+	---------------------------------------------------
+	--  VOXEL MANIP
+	---------------------------------------------------
+	local vm = minetest.get_voxel_manip()
+	-- need to define an area that will include the patter plus all neighbors and the growth, for simplicity we do:
+	local emin, emax = vm:read_from_map({pmin.x-growth_offset.x, pmin.y-growth_offset.y, pmin.z-growth_offset.z},
+										{pmax.x+growth_offset.x, pmax.y+growth_offset.y, pmax.z+growth_offset.z})
+	local area = VoxelArea:new({MinEdge=emin, MaxEdge=emax})
+	local data = vm:get_data()
+	
 	--set the nodes for deaths
-	for k,dpos in next, death_list do
-		minetest.set_node(dpos, {name=rules.trail})
+	for _,dpos in next, death_list do
+		local vi = area:index(dpos.x, dpos.y, dpos.z)
+		local nodid = data[vi]
+		if nodid == minetest.get_content_id("automata:active") then --this is redundant, we know it is
+			data[vi] = minetest.get_content_id(rules.trail)
+		end
 	end
 	--set the nodes for births
-	--minetest.log("action", "life_list: "..dump(life_list))
-	for k,bpos in next, life_list do --@todo why is this processing an empty table life_list!?
+	for _,bpos in next, life_list do --@todo why is this processing an empty table life_list!?
+		local vi = area:index(bpos.x, bpos.y, bpos.z)
+		local nodid = data[vi]
 		--test for destructive mode and if the node is occupied
-		if rules.destruct == "true" or minetest.get_node(bpos).name == "air" then
+		if rules.destruct == "true" or  nodid == minetest.get_content_id("air") then
 			ccount = ccount + 1
 			--test for final iteration
 			if is_final == 1 then
-				minetest.set_node(bpos, {name=rules.final})
+				data[vi] = minetest.get_content_id(rules.final)
 			else
-				minetest.set_node(bpos, {name="automata:active"})
+				data[vi] = minetest.get_content_id("automata:active")
 				--add to cell_list
-				--minetest.log("action", "bpos: "..dump(bpos))
 				new_cell_list[minetest.hash_node_position(bpos)] = true
 			end
 		end
 	end
+	
+	vm:set_data(data)
+	vm:write_to_map()
+	vm:update_map()
+	---------------------------------------------------
+	
 	local pminstring = "" --this is just needed for the print statement at the end if desired
 	if is_final == 1 or next(new_cell_list) == nil then
 		--remove the pattern from the registry
@@ -543,17 +565,53 @@ function automata.new_pattern(pname, offsets, rule_override)
 		else
 			hashed_cells = automata.inactive_cells
 		end
+		local xmin,ymin,zmin,xmax,ymax,zmax
 		
 		
-		--activate all inactive nodes @todo handle this with voxelmanip
+		--update pmin and pmax
+		--it would be nice to do this at each new_cell_list assignment above, but it is cleaner to just loop through all of them here
+		for k,v in next, hashed_cells  do
+			local p = minetest.get_position_from_hash(k)
+			if xmin == nil then --this should only run on the very first cell
+				xmin = p.x ; xmax = p.x ; ymin = p.y ; ymax = p.y ; zmin = p.z ; zmax = p.z
+			else
+				if p.x > xmax then xmax = p.x end
+				if p.x < xmin then xmin = p.x end
+				if p.y > ymax then ymax = p.y end
+				if p.y < ymin then ymin = p.y end
+				if p.z > zmax then zmax = p.z end
+				if p.z < zmin then zmin = p.z end
+			end
+		end
+		local pmin = {x=xmin,y=ymin,z=zmin}
+		local pmax = {x=xmax,y=ymax,z=zmax}
+		
+		---------------------------------------------------
+		--  VOXEL MANIP
+		---------------------------------------------------
+		local vm = minetest.get_voxel_manip()
+		local emin, emax = vm:read_from_map(pmin, pmax)
+		local area = VoxelArea:new({MinEdge=emin, MaxEdge=emax})
+		local data = vm:get_data()
+		
 		for pos_hash,_ in pairs(hashed_cells) do --@todo check ownership of node? lock registry?
-			pos = minetest.get_position_from_hash(pos_hash)
-			minetest.set_node(pos, {name="automata:active"})
+			local pos = minetest.get_position_from_hash(pos_hash)
+		
+			local vi = area:index(pos.x, pos.y, pos.z)
+			local nodid = data[vi]
+			if nodid == minetest.get_content_id("automata:inactive") then --this is redundant, we know it is
+				data[vi] = minetest.get_content_id("automata:active")
+			end
 			cell_count = cell_count + 1
 		end
+
+		vm:set_data(data)
+		vm:write_to_map()
+		vm:update_map()
+		---------------------------------------------------
 		
 		--add the cell list to the active cell registry with the gens, rules hash, and cell list
-		local values = {creator=pname, status="active", iteration=0, last_cycle=0, rules=rules, cell_count=cell_count, cell_list=hashed_cells}
+		local values = {creator=pname, status="active", iteration=0, rules=rules, cell_count=cell_count, cell_list=hashed_cells, pmin=pmin, pmax=pmax}
 		automata.patterns[pattern_id] = values --overwrite placeholder
 		return true
 	else 
