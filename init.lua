@@ -34,23 +34,27 @@ TODO: use voxelmanip for this
 function automata.grow(pattern_id)
 	local t1 = os.clock()
 	--update the pattern values: iteration, last_cycle
-	automata.patterns[pattern_id].iteration = automata.patterns[pattern_id].iteration +1
-	automata.patterns[pattern_id].last_cycle = automata.current_cycle
+	local iteration = automata.patterns[pattern_id].iteration + 1
+	automata.patterns[pattern_id].iteration = iteration --update the actual pattern table
 	local death_list ={} --cells that will be set to rules.trail at the end of grow()
 	local life_list = {} --cells that will be set to automata:active at the end of grow()
 	local empty_neighbors = {} --non -active neighbor cell list to be tested for births
 	local new_cell_list = {} --the final cell list to transfer back to automata.patterns[pattern_id]
 							 -- some of ^ will be cells that survived in a grow_distance=0 ruleset
 							 -- ^ this is to save the time of setting nodes for survival cells
-	local new_pmin, new_pmax
 	local ccount = 0
+	local xmin,ymin,zmin,xmax,ymax,zmax
 	
 	--load the rules
 	local rules = automata.patterns[pattern_id].rules
 	local is_final = 0
-	if automata.patterns[pattern_id].iteration == rules.gens then
+	if iteration == rules.gens then
 		is_final = 1
 	end
+	--adding a rainbow mode. will later check for rules.rainbow, which could even be a strong of content_ids
+	--local rainbow = {"black","brown","dark_green","dark_grey","grey","white","pink","red","orange","yellow","green","cyan","blue","magenta","violet"}
+	--rules.trail = "wool:"..rainbow[ iteration - 1 - ( #rainbow * math.floor((iteration - 1) / #rainbow) ) + 1 ]
+	
 	if not rules.grow_distance then rules.grow_distance = 0 end --in the case of 3D!
 	
 	local neighborhood= {}
@@ -294,18 +298,39 @@ function automata.grow(pattern_id)
 			end
 		end
 	end
-	--print(string.format("pattern, "..pattern_id.." iteration #"..automata.patterns[pattern_id].iteration.." elapsed time: %.2fms (new count: "..ccount..")", (os.clock() - t1) * 1000))
+	local pminstring = "" --this is just needed for the print statement at the end if desired
 	if is_final == 1 or next(new_cell_list) == nil then
 		--remove the pattern from the registry
-		minetest.chat_send_player(automata.patterns[pattern_id].creator, "pattern# "..pattern_id.." just completed at gen "..automata.patterns[pattern_id].iteration)
+		minetest.chat_send_player(automata.patterns[pattern_id].creator, "pattern# "..pattern_id.." just completed at gen "..iteration)
 		automata.patterns[pattern_id].status = "finished"
+	else
+		--update pmin and pmax
+		--it would be nice to do this at each new_cell_list assignment above, but it is cleaner to just loop through all of them here
+		for k,v in next, new_cell_list  do
+			local p = minetest.get_position_from_hash(k)
+			if xmin == nil then --this should only run on the very first cell
+				xmin = p.x ; xmax = p.x ; ymin = p.y ; ymax = p.y ; zmin = p.z ; zmax = p.z
+			else
+				if p.x > xmax then xmax = p.x end
+				if p.x < xmin then xmin = p.x end
+				if p.y > ymax then ymax = p.y end
+				if p.y < ymin then ymin = p.y end
+				if p.z > zmax then zmax = p.z end
+				if p.z < zmin then zmin = p.z end
+			end
+		end
+		pminstring = "pmin {x="..xmin..",y="..ymin..",z="..zmin.."} pmax{x="..xmax..",y="..ymax..",z="..zmax.."}"
 	end
 	--update the pattern values: pmin, pmax, cell_count, cell_list
-	automata.patterns[pattern_id].pmin = new_pmin
-	automata.patterns[pattern_id].pmax = new_pmax
-	automata.patterns[pattern_id].cell_count = ccount
+	automata.patterns[pattern_id].pmin = {x=xmin,y=ymin,z=zmin} -- is nil for finished patterns
+	automata.patterns[pattern_id].pmax = {x=xmax,y=ymax,z=zmax} -- is nil for finished patterns
+	automata.patterns[pattern_id].cell_count = ccount -- is accurate for finished patterns
 	automata.patterns[pattern_id].cell_list = new_cell_list
 	automata.patterns[pattern_id].timer = string.format("%.2fms", (os.clock() - t1) * 1000)
+	
+	print(string.format("pattern, "..pattern_id.." iteration #"..
+				iteration.." elapsed time: %.2fms (cells: "..ccount.." "..pminstring..")", (os.clock() - t1) * 1000))
+	
 	return true
 end
 
