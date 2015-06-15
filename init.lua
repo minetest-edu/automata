@@ -712,7 +712,11 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 	
 	--detect tab change but save all fields on every update including quit
 	local old_tab = automata.get_player_setting(pname, "tab")
-	automata.update_settings(pname, fields)
+	for k,v in next, fields do
+		automata.player_settings[pname][k] = v --we will preserve field entries exactly as entered 
+	end
+	automata.save_player_settings()	
+	
 	if old_tab and old_tab ~= automata.get_player_setting(pname, "tab") then
 		automata.show_rc_form(pname)
 	end	
@@ -806,18 +810,6 @@ function automata.load_player_settings()
 		end
 		file:close()
 	end
-end
-
---every time a form button, select, dropdown or tab is pressed, all settings must be updated.
-function automata.update_settings(pname, fields)
-	if not automata.player_settings[pname] then automata.player_settings[pname] = {} end
-	
-	for k,v in next, fields do
-		if v ~= "" then
-			automata.player_settings[pname][k] = v --we will preserve field entries exactly as entered 
-		end
-	end
-	automata.save_player_settings() --persist to file
 end
 
 function automata.get_player_setting(pname, setting)
