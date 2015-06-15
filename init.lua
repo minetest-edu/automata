@@ -446,8 +446,7 @@ function automata.grow(pattern_id)
 	
 	if is_final == 1 or next(new_cell_list) == nil then
 	--remove the pattern from the registry
-		print ("pattern# "..pattern_id.." just completed at gen "..iteration.. " total processing time: "..string.format("pattern, "..pattern_id.." iteration #"..
-				iteration.." elapsed time: %.2fms (final cells: "..ccount.." "..pminstring..")", automata.patterns[pattern_id].t_timer))
+		print ("pattern "..pattern_id.." completed at gen "..iteration.. " total proc. time: "..string.format("%.2fms", automata.patterns[pattern_id].t_timer).." final cells: "..ccount)
 		minetest.chat_send_player(automata.patterns[pattern_id].creator, "pattern# "..pattern_id.." just completed at gen "..iteration)
 		
 		automata.patterns[pattern_id].status = "finished"
