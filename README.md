@@ -7,7 +7,9 @@ like any minetest mod just install the mod as "automata" in your mods folder
 ## What it Does
 ### 2 Node types, 1 Tool
 
-This mod provides a "Programmable" Cellular Automata block (Inactive Cell) which you place, then you select the Remote Control tool and punch it to bring up the activation form. Once activated, Inactive Cells become Active Cells and start growing according to the rules you've set. Active Cells turn into Inactive Cells when dug. None of these have crafting recipes at this time since this is sort of obviously a creative mode mod... Cells coming from nothing...
+This mod provides a "Programmable" Cellular Automata block (Inactive Cell) which you place, then you select the Remote Control tool and punch it to bring up the activation form. Once activated, Inactive Cells become Active Cells and start growing according to the rules you've set. Active Cells turn into Inactive Cells when dug. 
+
+![screenshot_171106351](https://cloud.githubusercontent.com/assets/12679496/8151532/cc76388c-12cc-11e5-8b88-5fb614530cc9.png) ![screenshot_170757605](https://cloud.githubusercontent.com/assets/12679496/8151497/23d0be64-12cc-11e5-9de6-b205246f328f.png)
 
 ### The Rules Form
 "Using" the Remote will bring up a form, this form can be left blank to default to Conway's Game of Life rules. Otherwise custom rules can be entered in "code" in the survival/birth format, for example, conway cells are 8 neighbors, rule 23/3 which means if there are 3 neighbors an empty cell turns on, and already-active cells stay on if they have two or three neighbors, otherwise they turn off. (there are many online collections of Game of Life entities: http://www.argentum.freeserve.co.uk/lex.htm )

@@ -71,7 +71,22 @@ minetest.register_node("automata:active", {
 		return true
 	end,
 })
-
+minetest.register_craft({
+	output = "automata:inactive 32",
+	recipe = {
+		{"default:sand", "default:sand", "default:sand"},
+		{"default:sand", "default:mese_crystal", "default:sand"},
+		{"default:sand", "default:sand", "default:sand"}
+	}
+})
+minetest.register_craft({
+	output = "automata:remote",
+	recipe = {
+		{"automata:inactive", "automata:inactive", "automata:inactive"},
+		{"automata:inactive", "default:mese_crystal", "automata:inactive"},
+		{"automata:inactive", "automata:inactive", "automata:inactive"}
+	}
+})
 
 --[[
 METHOD: automata.grow(pattern_id)
