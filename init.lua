@@ -71,6 +71,16 @@ minetest.register_node("automata:active", {
 		return true
 	end,
 })
+-- the controller for activating cells
+minetest.register_tool("automata:remote" , {
+	description = "Automata Trigger",
+	inventory_image = "remote.png",
+	--left-clicking the tool
+	on_use = function (itemstack, user, pointed_thing)
+		local pname = user:get_player_name()
+		automata.show_rc_form(pname)
+	end,
+})
 minetest.register_craft({
 	output = "automata:inactive 32",
 	recipe = {
@@ -87,7 +97,26 @@ minetest.register_craft({
 		{"automata:inactive", "automata:inactive", "automata:inactive"}
 	}
 })
-
+-- REGISTER GLOBALSTEP
+local timer = 0
+minetest.register_globalstep(function(dtime)
+	timer = timer + dtime;
+	if timer >= 5 then
+		--print("who has tab5 open: "..dump(automata.open_tab5))
+		--process each pattern
+		for pattern_id, v in next, automata.patterns do
+			if automata.patterns[pattern_id].status == "active" --pattern is not paused or finished
+			and minetest.get_player_by_name(automata.patterns[pattern_id].creator) then --player left game
+				automata.grow(pattern_id)
+				--update anyone's formspec who has tab 5 open
+				for pname,v in next, automata.open_tab5 do
+					automata.show_rc_form(pname) --@TODO this sometimes fails to happen on finished patterns (issue #30)
+				end
+			end
+		end
+	timer = 0
+	end
+end)
 --[[
 METHOD: automata.grow(pattern_id)
 RETURN: nothing yet
@@ -317,7 +346,7 @@ function automata.grow(pattern_id)
 			or ( not plus and     minus and code1d[5]==1 )
 			or (     plus and     minus and code1d[6]==1 ) then
 				--add to life list
-				bpos = {x=epos.x+growth_offset.x, y=epos.y+growth_offset.y, z=epos.z+growth_offset.z}
+				local bpos = {x=epos.x+growth_offset.x, y=epos.y+growth_offset.y, z=epos.z+growth_offset.z}
 				table.insert(life_list, bpos) --when node is actually set we will add to new_cell_list
 			end
 			
@@ -388,11 +417,7 @@ function automata.grow(pattern_id)
 	---------------------------------------------------
 	
 	local pminstring = "" --this is just needed for the print statement at the end if desired
-	if is_final == 1 or next(new_cell_list) == nil then
-		--remove the pattern from the registry
-		minetest.chat_send_player(automata.patterns[pattern_id].creator, "pattern# "..pattern_id.." just completed at gen "..iteration)
-		automata.patterns[pattern_id].status = "finished"
-	else
+	if is_final ~= 1 and next(new_cell_list) then
 		--update pmin and pmax
 		--it would be nice to do this at each new_cell_list assignment above, but it is cleaner to just loop through all of them here
 		for k,v in next, new_cell_list  do
@@ -410,21 +435,129 @@ function automata.grow(pattern_id)
 		end
 		pminstring = "pmin {x="..xmin..",y="..ymin..",z="..zmin.."} pmax{x="..xmax..",y="..ymax..",z="..zmax.."}"
 	end
-	--update the pattern values: pmin, pmax, cell_count, cell_list
+	--update the pattern values: pmin, pmax, cell_count, cell_list, timers
 	automata.patterns[pattern_id].pmin = {x=xmin,y=ymin,z=zmin} -- is nil for finished patterns
 	automata.patterns[pattern_id].pmax = {x=xmax,y=ymax,z=zmax} -- is nil for finished patterns
 	automata.patterns[pattern_id].cell_count = ccount -- is accurate for finished patterns
 	automata.patterns[pattern_id].cell_list = new_cell_list
-	automata.patterns[pattern_id].timer = string.format("%.2fms", (os.clock() - t1) * 1000)
+	local timer = (os.clock() - t1) * 1000
+	automata.patterns[pattern_id].l_timer = timer
+	automata.patterns[pattern_id].t_timer = automata.patterns[pattern_id].t_timer + timer
 	
-	print(string.format("pattern, "..pattern_id.." iteration #"..
-				iteration.." elapsed time: %.2fms (cells: "..ccount.." "..pminstring..")", (os.clock() - t1) * 1000))
+	if is_final == 1 or next(new_cell_list) == nil then
+	--remove the pattern from the registry
+		print ("pattern# "..pattern_id.." just completed at gen "..iteration.. " total processing time: "..string.format("pattern, "..pattern_id.." iteration #"..
+				iteration.." elapsed time: %.2fms (final cells: "..ccount.." "..pminstring..")", automata.patterns[pattern_id].t_timer))
+		minetest.chat_send_player(automata.patterns[pattern_id].creator, "pattern# "..pattern_id.." just completed at gen "..iteration)
+		
+		automata.patterns[pattern_id].status = "finished"
+	end
 	
+	--print(string.format("pattern, "..pattern_id.." iteration #"..iteration.." elapsed time: %.2fms (cells: "..ccount.." "..pminstring..")", timer))
 	return true
 end
 
 --[[
-METHOD: automata.validate(pname)
+METHOD: automata.new_pattern(pname, offset_list)
+RETURN: true/false
+DESC: calls rules_validate() can activate inactive_cells or initialize from a list
+TODO: heavy development of the formspec expected
+--]]
+function automata.new_pattern(pname, offsets, rule_override)
+	local t1 = os.clock()
+	-- form validation
+	local rules = automata.rules_validate(pname, rule_override) --will be false if rules don't validate
+	
+	--minetest.log("action", "rules after validate: "..dump(rules))
+	
+	if rules then --in theory bad rule settings in the form should fail validation and throw a popup
+		--create the new pattern id empty
+		table.insert(automata.patterns, true) --placeholder to get id
+		local pattern_id = #automata.patterns
+		local pos = {}
+		local hashed_cells = {}
+		local cell_count=0
+		
+		--are we being supplied with a list of offsets?
+		if offsets then
+			local player = minetest.get_player_by_name(pname)
+			local ppos = player:getpos()
+			ppos = {x=math.floor(ppos.x), y=math.floor(ppos.y), z=math.floor(ppos.z)} --remove decimals
+			--minetest.log("action", "rules: "..dump(rules))
+			for k,offset in next, offsets do
+				local cell = {}
+				if rules.grow_axis == "x" then
+					cell = {x = ppos.x, y=ppos.y+offset.n, z=ppos.z+offset.e}
+				elseif rules.grow_axis == "y" then 
+					cell = {x = ppos.x+offset.e, y=ppos.y, z=ppos.z+offset.n}
+				elseif rules.grow_axis == "z" then
+					cell = {x = ppos.x-offset.e, y=ppos.y+offset.n, z=ppos.z}
+				else --3D, no grow_axis
+					cell = ppos
+				end
+				hashed_cells[minetest.hash_node_position(cell)] = true
+			end
+		else
+			hashed_cells = automata.inactive_cells
+		end
+		local xmin,ymin,zmin,xmax,ymax,zmax
+		
+		
+		--update pmin and pmax
+		--it would be nice to do this at each new_cell_list assignment above, but it is cleaner to just loop through all of them here
+		for k,v in next, hashed_cells  do
+			local p = minetest.get_position_from_hash(k)
+			if xmin == nil then --this should only run on the very first cell
+				xmin = p.x ; xmax = p.x ; ymin = p.y ; ymax = p.y ; zmin = p.z ; zmax = p.z
+			else
+				if p.x > xmax then xmax = p.x end
+				if p.x < xmin then xmin = p.x end
+				if p.y > ymax then ymax = p.y end
+				if p.y < ymin then ymin = p.y end
+				if p.z > zmax then zmax = p.z end
+				if p.z < zmin then zmin = p.z end
+			end
+		end
+		local pmin = {x=xmin,y=ymin,z=zmin}
+		local pmax = {x=xmax,y=ymax,z=zmax}
+		
+		---------------------------------------------------
+		--  VOXEL MANIP
+		---------------------------------------------------
+		local vm = minetest.get_voxel_manip()
+		local emin, emax = vm:read_from_map(pmin, pmax)
+		local area = VoxelArea:new({MinEdge=emin, MaxEdge=emax})
+		local data = vm:get_data()
+		for pos_hash,_ in pairs(hashed_cells) do --@todo check ownership of node? lock registry?
+			local pos = minetest.get_position_from_hash(pos_hash)
+		
+			local vi = area:index(pos.x, pos.y, pos.z)
+			data[vi] = minetest.get_content_id("automata:active")
+			cell_count = cell_count + 1
+		end
+
+		vm:set_data(data)
+		vm:write_to_map()
+		vm:update_map()
+		---------------------------------------------------
+		local timer = (os.clock() - t1) * 1000
+		--add the cell list to the active cell registry with the gens, rules hash, and cell list
+		local values = {creator=pname, status="active", iteration=0, rules=rules, cell_count=cell_count, cell_list=hashed_cells, pmin=pmin, pmax=pmax, t_timer=timer}
+		automata.patterns[pattern_id] = values --overwrite placeholder
+		return true
+	else 
+		return false 
+	end
+end
+
+--the formspecs and related settings and functions / selected field variables
+automata.player_settings = {} --per player form persistence
+automata.open_tab5 = {} --who has tab 5 (Manage) open at any moment
+automata.lifs = {} --indexed table of lif names
+automata.lifnames = "" --string of all lif file names
+
+--[[
+METHOD: automata.rules_validate(pname, rule_override)
 RETURN: rule_id (a reference to the automata.rule_registry)
 DESC: if the rule values are valid, make an entry into the rules table and return the id
       defaults are set to be Conway's Game of Life
@@ -590,130 +723,6 @@ function automata.explode(source, delimiters)
 	return elements
 end
 
---[[
-METHOD: automata.new_pattern(pname, offset_list)
-RETURN: true/false
-DESC: calls rules_validate() can activate inactive_cells or initialize from a list
-TODO: heavy development of the formspec expected
---]]
-function automata.new_pattern(pname, offsets, rule_override)
-	-- form validation
-	local rules = automata.rules_validate(pname, rule_override) --will be false if rules don't validate
-	
-	--minetest.log("action", "rules after validate: "..dump(rules))
-	
-	if rules then --in theory bad rule settings in the form should fail validation and throw a popup
-		--create the new pattern id empty
-		table.insert(automata.patterns, true) --placeholder to get id
-		local pattern_id = #automata.patterns
-		local pos = {}
-		local hashed_cells = {}
-		local cell_count=0
-		
-		--are we being supplied with a list of offsets?
-		if offsets then
-			local player = minetest.get_player_by_name(pname)
-			local ppos = player:getpos()
-			ppos = {x=math.floor(ppos.x), y=math.floor(ppos.y), z=math.floor(ppos.z)} --remove decimals
-			--minetest.log("action", "rules: "..dump(rules))
-			for k,offset in next, offsets do
-				local cell = {}
-				if rules.grow_axis == "x" then
-					cell = {x = ppos.x, y=ppos.y+offset.n, z=ppos.z+offset.e}
-				elseif rules.grow_axis == "y" then 
-					cell = {x = ppos.x+offset.e, y=ppos.y, z=ppos.z+offset.n}
-				elseif rules.grow_axis == "z" then
-					cell = {x = ppos.x-offset.e, y=ppos.y+offset.n, z=ppos.z}
-				else --3D, no grow_axis
-					cell = ppos
-				end
-				hashed_cells[minetest.hash_node_position(cell)] = true
-			end
-		else
-			hashed_cells = automata.inactive_cells
-		end
-		local xmin,ymin,zmin,xmax,ymax,zmax
-		
-		
-		--update pmin and pmax
-		--it would be nice to do this at each new_cell_list assignment above, but it is cleaner to just loop through all of them here
-		for k,v in next, hashed_cells  do
-			local p = minetest.get_position_from_hash(k)
-			if xmin == nil then --this should only run on the very first cell
-				xmin = p.x ; xmax = p.x ; ymin = p.y ; ymax = p.y ; zmin = p.z ; zmax = p.z
-			else
-				if p.x > xmax then xmax = p.x end
-				if p.x < xmin then xmin = p.x end
-				if p.y > ymax then ymax = p.y end
-				if p.y < ymin then ymin = p.y end
-				if p.z > zmax then zmax = p.z end
-				if p.z < zmin then zmin = p.z end
-			end
-		end
-		local pmin = {x=xmin,y=ymin,z=zmin}
-		local pmax = {x=xmax,y=ymax,z=zmax}
-		
-		---------------------------------------------------
-		--  VOXEL MANIP
-		---------------------------------------------------
-		local vm = minetest.get_voxel_manip()
-		local emin, emax = vm:read_from_map(pmin, pmax)
-		local area = VoxelArea:new({MinEdge=emin, MaxEdge=emax})
-		local data = vm:get_data()
-		for pos_hash,_ in pairs(hashed_cells) do --@todo check ownership of node? lock registry?
-			local pos = minetest.get_position_from_hash(pos_hash)
-		
-			local vi = area:index(pos.x, pos.y, pos.z)
-			data[vi] = minetest.get_content_id("automata:active")
-			cell_count = cell_count + 1
-		end
-
-		vm:set_data(data)
-		vm:write_to_map()
-		vm:update_map()
-		---------------------------------------------------
-		
-		--add the cell list to the active cell registry with the gens, rules hash, and cell list
-		local values = {creator=pname, status="active", iteration=0, rules=rules, cell_count=cell_count, cell_list=hashed_cells, pmin=pmin, pmax=pmax}
-		automata.patterns[pattern_id] = values --overwrite placeholder
-		return true
-	else 
-		return false 
-	end
-end
-
--- REGISTER GLOBALSTEP
-local timer = 0
-minetest.register_globalstep(function(dtime)
-	timer = timer + dtime;
-	if timer >= 5 then
-		--print("who has tab5 open: "..dump(automata.open_tab5))
-		--process each pattern
-		for pattern_id, v in next, automata.patterns do
-			if automata.patterns[pattern_id].status == "active" --pattern is not paused or finished
-			and minetest.get_player_by_name(automata.patterns[pattern_id].creator) then --player left game
-				automata.grow(pattern_id)
-				--update anyone's formspec who has tab 5 open
-				for pname,v in next, automata.open_tab5 do
-					automata.show_rc_form(pname) --@TODO this sometimes fails to happen on finished patterns (issue #30)
-				end
-			end
-		end
-	timer = 0
-	end
-end)
-
--- the controller for activating cells
-minetest.register_tool("automata:remote" , {
-	description = "Automata Trigger",
-	inventory_image = "remote.png",
-	--left-clicking the tool
-	on_use = function (itemstack, user, pointed_thing)
-		local pname = user:get_player_name()
-		automata.show_rc_form(pname)
-	end,
-})
-
 -- Processing the form from the RC
 minetest.register_on_player_receive_fields(function(player, formname, fields)
 	--minetest.log("action", "fields submitted: "..dump(fields))
@@ -775,14 +784,8 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 			end
 		end
 	end
-	
 end)
 
---the formspecs and related settings / selected field variables
-automata.player_settings = {} --per player form persistence
-automata.open_tab5 = {} --who has tab 5 (Manage) open at any moment
-automata.lifs = {} --indexed table of lif names
-automata.lifnames = "" --string of all lif file names
 
 --this is run at load time (see EOF)
 function automata.load_lifs()
