@@ -34,7 +34,8 @@ TODO: use voxelmanip for this
 function automata.grow(pattern_id)
 	local t1 = os.clock()
 	--update the pattern values: iteration, last_cycle
-	automata.patterns[pattern_id].iteration = automata.patterns[pattern_id].iteration +1
+	local iteration = automata.patterns[pattern_id].iteration +1
+	automata.patterns[pattern_id].iteration = iteration
 	automata.patterns[pattern_id].last_cycle = automata.current_cycle
 	local death_list ={} --cells that will be set to rules.trail at the end of grow()
 	local life_list = {} --cells that will be set to automata:active at the end of grow()
@@ -42,13 +43,13 @@ function automata.grow(pattern_id)
 	local new_cell_list = {} --the final cell list to transfer back to automata.patterns[pattern_id]
 							 -- some of ^ will be cells that survived in a grow_distance=0 ruleset
 							 -- ^ this is to save the time of setting nodes for survival cells
-	local new_pmin, new_pmax
+	local xmin,ymin,zmin,xmax,ymax,zmax	
 	local ccount = 0
 	
 	--load the rules
 	local rules = automata.patterns[pattern_id].rules
 	local is_final = 0
-	if automata.patterns[pattern_id].iteration == rules.gens then
+	if iteration == rules.gens then
 		is_final = 1
 	end
 	if not rules.grow_distance then rules.grow_distance = 0 end --in the case of 3D!
@@ -249,7 +250,7 @@ function automata.grow(pattern_id)
 			or ( not plus and     minus and code1d[5]==1 )
 			or (     plus and     minus and code1d[6]==1 ) then
 				--add to life list
-				bpos = {x=epos.x+growth_offset.x, y=epos.y+growth_offset.y, z=epos.z+growth_offset.z}
+				local bpos = {x=epos.x+growth_offset.x, y=epos.y+growth_offset.y, z=epos.z+growth_offset.z}
 				table.insert(life_list, bpos) --when node is actually set we will add to new_cell_list
 			end
 			
@@ -508,6 +509,8 @@ DESC: calls rules_validate() can activate inactive_cells or initialize from a li
 TODO: heavy development of the formspec expected
 --]]
 function automata.new_pattern(pname, offsets, rule_override)
+	local t1 = os.clock()
+	local xmin,ymin,zmin,xmax,ymax,zmax	
 	-- form validation
 	local rules = automata.rules_validate(pname, rule_override) --will be false if rules don't validate
 	
@@ -550,10 +553,25 @@ function automata.new_pattern(pname, offsets, rule_override)
 			pos = minetest.get_position_from_hash(pos_hash)
 			minetest.set_node(pos, {name="automata:active"})
 			cell_count = cell_count + 1
+			
+			local p = minetest.get_position_from_hash(pos_hash)
+			if xmin == nil then --this should only run on the very first cell
+				xmin = p.x ; xmax = p.x ; ymin = p.y ; ymax = p.y ; zmin = p.z ; zmax = p.z
+			else
+				if p.x > xmax then xmax = p.x end
+				if p.x < xmin then xmin = p.x end
+				if p.y > ymax then ymax = p.y end
+				if p.y < ymin then ymin = p.y end
+				if p.z > zmax then zmax = p.z end
+				if p.z < zmin then zmin = p.z end
+			end		
 		end
+		local pmin = {x=xmin,y=ymin,z=zmin}
+		local pmax = {x=xmax,y=ymax,z=zmax}
 		
+		local timer = (os.clock() - t1) * 1000
 		--add the cell list to the active cell registry with the gens, rules hash, and cell list
-		local values = {creator=pname, status="active", iteration=0, last_cycle=0, rules=rules, cell_count=cell_count, cell_list=hashed_cells}
+		local values = {creator=pname, status="active", iteration=0, rules=rules, cell_count=cell_count, cell_list=hashed_cells, pmin=pmin, pmax=pmax, t_timer=timer}
 		automata.patterns[pattern_id] = values --overwrite placeholder
 		return true
 	else 
