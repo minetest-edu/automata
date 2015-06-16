@@ -127,8 +127,9 @@ TODO: use voxelmanip for this
 function automata.grow(pattern_id)
 	local t1 = os.clock()
 	--update the pattern values: iteration, last_cycle
-	local iteration = automata.patterns[pattern_id].iteration + 1
-	automata.patterns[pattern_id].iteration = iteration --update the actual pattern table
+	local iteration = automata.patterns[pattern_id].iteration +1
+	automata.patterns[pattern_id].iteration = iteration
+	automata.patterns[pattern_id].last_cycle = automata.current_cycle
 	local death_list ={} --cells that will be set to rules.trail at the end of grow()
 	local life_list = {} --cells that will be set to automata:active at the end of grow()
 	local empty_neighbors = {} --non -active neighbor cell list to be tested for births
@@ -410,7 +411,7 @@ function automata.grow(pattern_id)
 			end
 		end
 	end
-	
+
 	vm:set_data(data)
 	vm:write_to_map()
 	vm:update_map()
@@ -721,6 +722,178 @@ function automata.explode(source, delimiters)
 	string.gsub(source, pattern, function(value) if tonumber(value) then elements[tonumber(value)] = true; end  end);
 	return elements
 end
+
+--[[
+METHOD: automata.new_pattern(pname, offset_list)
+RETURN: true/false
+DESC: calls rules_validate() can activate inactive_cells or initialize from a list
+TODO: heavy development of the formspec expected
+--]]
+function automata.new_pattern(pname, offsets, rule_override)
+	local t1 = os.clock()
+	local xmin,ymin,zmin,xmax,ymax,zmax	
+	-- form validation
+	local rules = automata.rules_validate(pname, rule_override) --will be false if rules don't validate
+	
+	--minetest.log("action", "rules after validate: "..dump(rules))
+	
+	if rules then --in theory bad rule settings in the form should fail validation and throw a popup
+		--create the new pattern id empty
+		table.insert(automata.patterns, true) --placeholder to get id
+		local pattern_id = #automata.patterns
+		local pos = {}
+		local hashed_cells = {}
+		local cell_count=0
+		
+		--are we being supplied with a list of offsets?
+		if offsets then
+			local player = minetest.get_player_by_name(pname)
+			local ppos = player:getpos()
+			ppos = {x=math.floor(ppos.x), y=math.floor(ppos.y), z=math.floor(ppos.z)} --remove decimals
+			--minetest.log("action", "rules: "..dump(rules))
+			for k,offset in next, offsets do
+				local cell = {}
+				if rules.grow_axis == "x" then
+					cell = {x = ppos.x, y=ppos.y+offset.n, z=ppos.z+offset.e}
+				elseif rules.grow_axis == "y" then 
+					cell = {x = ppos.x+offset.e, y=ppos.y, z=ppos.z+offset.n}
+				elseif rules.grow_axis == "z" then
+					cell = {x = ppos.x-offset.e, y=ppos.y+offset.n, z=ppos.z}
+				else --3D, no grow_axis
+					cell = ppos
+				end
+				hashed_cells[minetest.hash_node_position(cell)] = true
+			end
+		else
+			hashed_cells = automata.inactive_cells
+		end
+		
+		
+		--activate all inactive nodes @todo handle this with voxelmanip
+		for pos_hash,_ in pairs(hashed_cells) do --@todo check ownership of node? lock registry?
+			pos = minetest.get_position_from_hash(pos_hash)
+			minetest.set_node(pos, {name="automata:active"})
+			cell_count = cell_count + 1
+			
+			local p = minetest.get_position_from_hash(pos_hash)
+			if xmin == nil then --this should only run on the very first cell
+				xmin = p.x ; xmax = p.x ; ymin = p.y ; ymax = p.y ; zmin = p.z ; zmax = p.z
+			else
+				if p.x > xmax then xmax = p.x end
+				if p.x < xmin then xmin = p.x end
+				if p.y > ymax then ymax = p.y end
+				if p.y < ymin then ymin = p.y end
+				if p.z > zmax then zmax = p.z end
+				if p.z < zmin then zmin = p.z end
+			end		
+		end
+		local pmin = {x=xmin,y=ymin,z=zmin}
+		local pmax = {x=xmax,y=ymax,z=zmax}
+		
+		local timer = (os.clock() - t1) * 1000
+		--add the cell list to the active cell registry with the gens, rules hash, and cell list
+		local values = {creator=pname, status="active", iteration=0, rules=rules, cell_count=cell_count, cell_list=hashed_cells, pmin=pmin, pmax=pmax, t_timer=timer}
+		automata.patterns[pattern_id] = values --overwrite placeholder
+		return true
+	else 
+		return false 
+	end
+end
+--[[ MINETEST CALLBACKS:--]]
+
+-- REGISTER GLOBALSTEP
+local timer = 0
+minetest.register_globalstep(function(dtime)
+	timer = timer + dtime;
+	if timer >= 5 then
+		--print("who has tab5 open: "..dump(automata.open_tab5))
+		--process each pattern
+		for pattern_id, v in next, automata.patterns do
+			if automata.patterns[pattern_id].status == "active" --pattern is not paused or finished
+			and minetest.get_player_by_name(automata.patterns[pattern_id].creator) then --player left game
+				automata.grow(pattern_id)
+				--update anyone's formspec who has tab 5 open
+				for pname,v in next, automata.open_tab5 do
+					automata.show_rc_form(pname) --@TODO this sometimes fails to happen on finished patterns (issue #30)
+				end
+			end
+		end
+	timer = 0
+	end
+end)
+
+-- a generic node type for active cells
+minetest.register_node("automata:active", {
+	description = "Active Automaton",
+	tiles = {"active.png"},
+	light_source = 5,
+	groups = {	live_automata = 1,
+				oddly_breakable_by_hand=1,
+				not_in_creative_inventory = 1 --only programmable nodes appear in the inventory
+	},
+})
+
+
+--[[  FOR THE CREATION OF A PROGRAMMABLE BLOCK,
+      AND IT'S ACTIVATION AS A PATTERN --]]
+
+-- new block that requires activation
+minetest.register_node("automata:inactive", {
+	description = "Programmable Automata",
+	tiles = {"inactive.png"},
+	light_source = 3,
+	groups = {oddly_breakable_by_hand=1},
+	
+	on_construct = function(pos) --@todo this is not getting called by worldedit 
+		--local n = minetest.get_node(pos)
+		local meta = minetest.get_meta(pos)
+		meta:set_string("infotext", "\"Inactive Automata\"")
+		--register the cell in the cell registry
+		automata.inactive_cells[minetest.hash_node_position(pos)] = true
+		--minetest.log("action", "inactive: "..dump(automata.inactive_cells))
+	end,
+	on_dig = function(pos)
+		--remove from the inactive cell registry
+		if automata.inactive_cells[minetest.hash_node_position(pos)] then
+			automata.inactive_cells[minetest.hash_node_position(pos)] = nil end
+		--minetest.log("action", "inactive: "..dump(automata.inactive_cells))
+		minetest.set_node(pos, {name="air"})
+		return true
+	end,
+})
+
+-- an activated automata block -- further handling of this node done by globalstep
+minetest.register_node("automata:active", {
+	description = "Active Automata",
+	tiles = {"active.png"},
+	drop = { max_items = 1, items = { "automata.inactive" } }, -- change back to inactive when dug 
+	light_source = 5,
+	groups = {oddly_breakable_by_hand=1, not_in_creative_inventory=1},
+	on_dig = function(pos)
+		--get the pattern ID from the meta and remove the cell from the pattern table
+		for pattern_id,values in next, automata.patterns do
+			for pos_hash,v in next, values.cell_list do
+				if minetest.hash_node_position(pos) == pos_hash then
+					automata.patterns[pattern_id].cell_list[minetest.hash_node_position(pos)]= nil
+					--@todo update the cell count and the pmin and pmax
+				end
+			end
+		end
+		minetest.set_node(pos, {name="air"})
+		return true
+	end,
+})
+
+-- the controller for activating cells
+minetest.register_tool("automata:remote" , {
+	description = "Automata Trigger",
+	inventory_image = "remote.png",
+	--left-clicking the tool
+	on_use = function (itemstack, user, pointed_thing)
+		local pname = user:get_player_name()
+		automata.show_rc_form(pname)
+	end,
+})
 
 -- Processing the form from the RC
 minetest.register_on_player_receive_fields(function(player, formname, fields)
