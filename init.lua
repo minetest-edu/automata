@@ -294,18 +294,43 @@ function automata.grow(pattern_id)
 			end
 		end
 	end
-	--print(string.format("pattern, "..pattern_id.." iteration #"..automata.patterns[pattern_id].iteration.." elapsed time: %.2fms (new count: "..ccount..")", (os.clock() - t1) * 1000))
+	local pminstring = "" --this is just needed for the print statement at the end if desired
+	if is_final ~= 1 and next(new_cell_list) then
+		--update pmin and pmax
+		--it would be nice to do this at each new_cell_list assignment above, but it is cleaner to just loop through all of them here
+		for k,v in next, new_cell_list  do
+			local p = minetest.get_position_from_hash(k)
+			if xmin == nil then --this should only run on the very first cell
+				xmin = p.x ; xmax = p.x ; ymin = p.y ; ymax = p.y ; zmin = p.z ; zmax = p.z
+			else
+				if p.x > xmax then xmax = p.x end
+				if p.x < xmin then xmin = p.x end
+				if p.y > ymax then ymax = p.y end
+				if p.y < ymin then ymin = p.y end
+				if p.z > zmax then zmax = p.z end
+				if p.z < zmin then zmin = p.z end
+			end
+		end
+		pminstring = "pmin {x="..xmin..",y="..ymin..",z="..zmin.."} pmax{x="..xmax..",y="..ymax..",z="..zmax.."}"
+	end
+	--update the pattern values: pmin, pmax, cell_count, cell_list, timers
+	automata.patterns[pattern_id].pmin = {x=xmin,y=ymin,z=zmin} -- is nil for finished patterns
+	automata.patterns[pattern_id].pmax = {x=xmax,y=ymax,z=zmax} -- is nil for finished patterns
+	automata.patterns[pattern_id].cell_count = ccount -- is accurate for finished patterns
+	automata.patterns[pattern_id].cell_list = new_cell_list
+	local timer = (os.clock() - t1) * 1000
+	automata.patterns[pattern_id].l_timer = timer
+	automata.patterns[pattern_id].t_timer = automata.patterns[pattern_id].t_timer + timer
+	
 	if is_final == 1 or next(new_cell_list) == nil then
-		--remove the pattern from the registry
-		minetest.chat_send_player(automata.patterns[pattern_id].creator, "pattern# "..pattern_id.." just completed at gen "..automata.patterns[pattern_id].iteration)
+	--remove the pattern from the registry
+		print ("pattern "..pattern_id.." completed at gen "..iteration.. " total proc. time: "..string.format("%.2fms", automata.patterns[pattern_id].t_timer).." final cells: "..ccount)
+		minetest.chat_send_player(automata.patterns[pattern_id].creator, "pattern# "..pattern_id.." just completed at gen "..iteration)
+		
 		automata.patterns[pattern_id].status = "finished"
 	end
-	--update the pattern values: pmin, pmax, cell_count, cell_list
-	automata.patterns[pattern_id].pmin = new_pmin
-	automata.patterns[pattern_id].pmax = new_pmax
-	automata.patterns[pattern_id].cell_count = ccount
-	automata.patterns[pattern_id].cell_list = new_cell_list
-	automata.patterns[pattern_id].timer = string.format("%.2fms", (os.clock() - t1) * 1000)
+	
+	--print(string.format("pattern, "..pattern_id.." iteration #"..iteration.." elapsed time: %.2fms (cells: "..ccount.." "..pminstring..")", timer))
 	return true
 end
 
