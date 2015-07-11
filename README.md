@@ -55,7 +55,7 @@ For other known issues and planned improvements see: https://github.com/bobombol
 
 ##New since v.0.0.5
 - fixed some mashed up code from merge (duplicate minetest.register()s)
-- refactored the growth period to be proportional to 4th power of the cell_count (in seconds)
+- refactored the growth period to be proportional to 4th root of the cell_count (in seconds)
 
 ##New since v.0.0.4
 - implemented the Lua Voxel Manipulator instead of set_node()
