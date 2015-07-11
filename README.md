@@ -56,6 +56,7 @@ For other known issues and planned improvements see: https://github.com/bobombol
 ##New since v.0.0.4
 - implemented the Lua Voxel Manipulator instead of set_node()
 - small form bug fixes
+- crafting recipes
 
 ##New since v.0.0.3
 - improved form with management tab, better validation, persistence
