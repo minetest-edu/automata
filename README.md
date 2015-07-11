@@ -1,4 +1,4 @@
-# automata v.0.0.5
+# automata v.0.0.6
 ### A minetest mod for growing various cellular automata, including conway's game of life...
 
 ## Installation
@@ -31,6 +31,7 @@ Alternatively you can select a Game of Life pattern from the right-hand list. Do
 
 ## Known Issues
 - Leaving the game leaves all active and inactive automata cells in the map dormant forever. Persistence will be in a future release.
+- Large patterns (particularly 3D patterns, can cause serious lag)
 
 ## Next Steps in Development
 -improve the form:
@@ -48,10 +49,13 @@ Alternatively you can select a Game of Life pattern from the right-hand list. Do
 
 -other improvements
     - improve efficiency, voxelManip has made 1D and 2D patterns take longer; VM not fully utilized
-	- will probably make larger (3D) patterns grow less often and smaller (1D) patterns more often
-    - need a way to persist/resume after quit/crash: need to save some tables to file on update, reload and reactivate at mod load
+    - need a way to persist/resume after quit/crash: need to save some tables to file on update, reload and reactivate at mod load, might be fixed by not saving cell list, using voxelArea extents instead...
 
 For other known issues and planned improvements see: https://github.com/bobombolo/automata/issues
+
+##New since v.0.0.5
+- fixed some mashed up code from merge (duplicate minetest.register()s)
+- refactored the growth period to be proportional to 4th power of the cell_count (in seconds)
 
 ##New since v.0.0.4
 - implemented the Lua Voxel Manipulator instead of set_node()
