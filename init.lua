@@ -98,25 +98,29 @@ minetest.register_craft({
 	}
 })
 -- REGISTER GLOBALSTEP
-local timer = 0
 minetest.register_globalstep(function(dtime)
-	timer = timer + dtime;
-	if timer >= 5 then
-		--print("who has tab5 open: "..dump(automata.open_tab5))
-		--process each pattern
-		for pattern_id, v in next, automata.patterns do
-			if automata.patterns[pattern_id].status == "active" --pattern is not paused or finished
-			and minetest.get_player_by_name(automata.patterns[pattern_id].creator) then --player left game
-				automata.grow(pattern_id)
-				--update anyone's formspec who has tab 5 open
-				for pname,v in next, automata.open_tab5 do
-					automata.show_rc_form(pname) --@TODO this sometimes fails to happen on finished patterns (issue #30)
-				end
-			end
-		end
-	timer = 0
-	end
+	automata.grow_all()
 end)
+
+function automata.grow_all()
+	for pattern_id, v in next, automata.patterns do
+	--print(pattern_id)
+		if automata.patterns[pattern_id].status == "active" --pattern is not paused or finished
+		and minetest.get_player_by_name(automata.patterns[pattern_id].creator) --player in game
+		and (os.clock() - automata.patterns[pattern_id].last_grow) >= automata.patterns[pattern_id].cell_count ^ 0.25 then 
+			automata.patterns[pattern_id].status = "growing" --in case globalstep piles up?
+			automata.grow(pattern_id)
+			--update "manage" formspec for creator if tab 5 open
+			if automata.open_tab5[automata.patterns[pattern_id].creator] then
+				automata.show_rc_form(automata.patterns[pattern_id].creator)
+				--@TODO this sometimes fails to happen on finished patterns (issue #30)
+			end
+		else
+			--print("nogrow")
+		end
+	end
+end
+
 --[[
 METHOD: automata.grow(pattern_id)
 RETURN: nothing yet
@@ -451,6 +455,7 @@ function automata.grow(pattern_id)
 	automata.patterns[pattern_id].cell_count = ccount -- is accurate for finished patterns
 	automata.patterns[pattern_id].cell_list = new_cell_list
 	local timer = (os.clock() - t1) * 1000
+	automata.patterns[pattern_id].last_grow = os.clock()
 	automata.patterns[pattern_id].l_timer = timer
 	automata.patterns[pattern_id].t_timer = automata.patterns[pattern_id].t_timer + timer
 	
@@ -460,6 +465,8 @@ function automata.grow(pattern_id)
 		minetest.chat_send_player(automata.patterns[pattern_id].creator, "pattern# "..pattern_id.." just completed at gen "..iteration)
 		
 		automata.patterns[pattern_id].status = "finished"
+	else
+		automata.patterns[pattern_id].status = "active" --set to growing in globalstep
 	end
 	
 	--print(string.format("pattern, "..pattern_id.." iteration #"..iteration.." elapsed time: %.2fms (cells: "..ccount.." "..pminstring..")", timer))
@@ -801,108 +808,13 @@ function automata.new_pattern(pname, offsets, rule_override)
 		
 		local timer = (os.clock() - t1) * 1000
 		--add the cell list to the active cell registry with the gens, rules hash, and cell list
-		local values = {creator=pname, status="active", iteration=0, rules=rules, cell_count=cell_count, cell_list=hashed_cells, pmin=pmin, pmax=pmax, t_timer=timer}
+		local values = {creator=pname, status="active", iteration=0, rules=rules, cell_count=cell_count, cell_list=hashed_cells, pmin=pmin, pmax=pmax, t_timer=timer, last_grow=os.clock()}
 		automata.patterns[pattern_id] = values --overwrite placeholder
 		return true
-	else 
+	else
 		return false 
 	end
 end
---[[ MINETEST CALLBACKS:--]]
-
--- REGISTER GLOBALSTEP
-local timer = 0
-minetest.register_globalstep(function(dtime)
-	timer = timer + dtime;
-	if timer >= 5 then
-		--print("who has tab5 open: "..dump(automata.open_tab5))
-		--process each pattern
-		for pattern_id, v in next, automata.patterns do
-			if automata.patterns[pattern_id].status == "active" --pattern is not paused or finished
-			and minetest.get_player_by_name(automata.patterns[pattern_id].creator) then --player left game
-				automata.grow(pattern_id)
-				--update anyone's formspec who has tab 5 open
-				for pname,v in next, automata.open_tab5 do
-					automata.show_rc_form(pname) --@TODO this sometimes fails to happen on finished patterns (issue #30)
-				end
-			end
-		end
-	timer = 0
-	end
-end)
-
--- a generic node type for active cells
-minetest.register_node("automata:active", {
-	description = "Active Automaton",
-	tiles = {"active.png"},
-	light_source = 5,
-	groups = {	live_automata = 1,
-				oddly_breakable_by_hand=1,
-				not_in_creative_inventory = 1 --only programmable nodes appear in the inventory
-	},
-})
-
-
---[[  FOR THE CREATION OF A PROGRAMMABLE BLOCK,
-      AND IT'S ACTIVATION AS A PATTERN --]]
-
--- new block that requires activation
-minetest.register_node("automata:inactive", {
-	description = "Programmable Automata",
-	tiles = {"inactive.png"},
-	light_source = 3,
-	groups = {oddly_breakable_by_hand=1},
-	
-	on_construct = function(pos) --@todo this is not getting called by worldedit 
-		--local n = minetest.get_node(pos)
-		local meta = minetest.get_meta(pos)
-		meta:set_string("infotext", "\"Inactive Automata\"")
-		--register the cell in the cell registry
-		automata.inactive_cells[minetest.hash_node_position(pos)] = true
-		--minetest.log("action", "inactive: "..dump(automata.inactive_cells))
-	end,
-	on_dig = function(pos)
-		--remove from the inactive cell registry
-		if automata.inactive_cells[minetest.hash_node_position(pos)] then
-			automata.inactive_cells[minetest.hash_node_position(pos)] = nil end
-		--minetest.log("action", "inactive: "..dump(automata.inactive_cells))
-		minetest.set_node(pos, {name="air"})
-		return true
-	end,
-})
-
--- an activated automata block -- further handling of this node done by globalstep
-minetest.register_node("automata:active", {
-	description = "Active Automata",
-	tiles = {"active.png"},
-	drop = { max_items = 1, items = { "automata.inactive" } }, -- change back to inactive when dug 
-	light_source = 5,
-	groups = {oddly_breakable_by_hand=1, not_in_creative_inventory=1},
-	on_dig = function(pos)
-		--get the pattern ID from the meta and remove the cell from the pattern table
-		for pattern_id,values in next, automata.patterns do
-			for pos_hash,v in next, values.cell_list do
-				if minetest.hash_node_position(pos) == pos_hash then
-					automata.patterns[pattern_id].cell_list[minetest.hash_node_position(pos)]= nil
-					--@todo update the cell count and the pmin and pmax
-				end
-			end
-		end
-		minetest.set_node(pos, {name="air"})
-		return true
-	end,
-})
-
--- the controller for activating cells
-minetest.register_tool("automata:remote" , {
-	description = "Automata Trigger",
-	inventory_image = "remote.png",
-	--left-clicking the tool
-	on_use = function (itemstack, user, pointed_thing)
-		local pname = user:get_player_name()
-		automata.show_rc_form(pname)
-	end,
-})
 
 -- Processing the form from the RC
 minetest.register_on_player_receive_fields(function(player, formname, fields)
