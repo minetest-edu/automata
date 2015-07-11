@@ -377,8 +377,17 @@ function automata.grow(pattern_id)
 	--  VOXEL MANIP
 	---------------------------------------------------
 	local vm = minetest.get_voxel_manip()
-	-- need to define an area that will include the pattern plus all neighbors and the growth, for simplicity we do:
-	local e; if not rules.grow_distance then e = 1 else e = math.abs(rules.grow_distance) end
+	--define a voxelArea that will include the pattern plus all potential new cells,
+	--for 3D patterns we need 1 in all directions, for 0 grow_distances we need 1 in 
+	--the direction of growth, and otherwise we need grow_distance in the grow_direction, 
+	--but for now we keep it simpler and add 1 or grow_distance in ALL directions. 
+	--@TODO when we start using the voxelArea indexes for all calculations, and stop 
+	--storing absolute positions and converting between pos_hashes and requesting area:index() 
+	--for each cell, this will change. see https://github.com/bobombolo/automata/issues/29
+	local e 
+	if rules.neighbors > 8 or rules.grow_distance == "" or rules.grow_distance == 0 then e = 1
+	else e = math.abs(rules.grow_distance) end
+	
 	local emin, emax = vm:read_from_map({x=pmin.x-e,
 										 y=pmin.y-e,
 										 z=pmin.z-e},
@@ -434,7 +443,7 @@ function automata.grow(pattern_id)
 				if p.z < zmin then zmin = p.z end
 			end
 		end
-		pminstring = "pmin {x="..xmin..",y="..ymin..",z="..zmin.."} pmax{x="..xmax..",y="..ymax..",z="..zmax.."}"
+		pminstring = "pmin {x="..xmin..",y="..ymin..",z="..zmin.."} pmax{x="..xmax..",y="..ymax..",z="..zmax.."}"-- only used for debugging below
 	end
 	--update the pattern values: pmin, pmax, cell_count, cell_list, timers
 	automata.patterns[pattern_id].pmin = {x=xmin,y=ymin,z=zmin} -- is nil for finished patterns
@@ -900,37 +909,6 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 	--minetest.log("action", "fields submitted: "..dump(fields))
 	local pname = player:get_player_name()
 	
-	--handle open tab5, system needs to know who has tab5 open at any moment so that
-	-- it can be refreshed by globalstep activity...
-	if fields.quit or ( fields.tab ~= "5" and not fields.pid_id ) then 
-		automata.open_tab5[pname] = nil
-	end --reset to nil in on_player_receive_fields()
-	
-	--detect tab change but save all fields on every update including quit
-	local old_tab = automata.get_player_setting(pname, "tab")
-	for k,v in next, fields do
-		automata.player_settings[pname][k] = v --we will preserve field entries exactly as entered 
-	end
-	automata.save_player_settings()	
-	
-	if old_tab and old_tab ~= automata.get_player_setting(pname, "tab") then
-		automata.show_rc_form(pname)
-	end	
-	
-	--if the pid_id click or double-click field is submitted, we pause or unpause the pattern
-	if fields.pid_id then
-		--translate the pid_id back to a pattern_id
-		local pid_id = string.sub(fields.pid_id, 5)
-		local pattern_id = automata.open_tab5[pname][tonumber(pid_id)] --this table is created in show_rcform() survives changes to patterns table
-		if string.sub(fields.pid_id, 1, 4) == "CHG:" then
-			automata.patterns[pattern_id].status = "paused"
-		elseif string.sub(fields.pid_id, 1, 4) == "DCL:" then
-			automata.patterns[pattern_id].status = "active"
-		end
-		--update the form
-		automata.show_rc_form(pname)
-	end
-	
 	--this is the only situation where a exit ~= "" should open a form
 	if formname == "automata:popup" then
 		if fields.exit == "Back" then
@@ -939,7 +917,36 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 	end
 	
 	if formname == "automata:rc_form" then 
+		--handle open tab5, system needs to know who has tab5 open at any moment so that
+		-- it can be refreshed by globalstep activity...
+		if fields.quit or ( fields.tab ~= "5" and not fields.pid_id ) then 
+			automata.open_tab5[pname] = nil
+		end --reset to nil in on_player_receive_fields()
 		
+		--detect tab change but save all fields on every update including quit
+		local old_tab = automata.get_player_setting(pname, "tab")
+		for k,v in next, fields do
+			automata.player_settings[pname][k] = v --we will preserve field entries exactly as entered 
+		end
+		automata.save_player_settings()	
+		
+		if old_tab and old_tab ~= automata.get_player_setting(pname, "tab") then
+			automata.show_rc_form(pname)
+		end	
+		
+		--if the pid_id click or double-click field is submitted, we pause or unpause the pattern
+		if fields.pid_id then
+			--translate the pid_id back to a pattern_id
+			local pid_id = string.sub(fields.pid_id, 5)
+			local pattern_id = automata.open_tab5[pname][tonumber(pid_id)] --this table is created in show_rcform() survives changes to patterns table
+			if string.sub(fields.pid_id, 1, 4) == "CHG:" then
+				automata.patterns[pattern_id].status = "paused"
+			elseif string.sub(fields.pid_id, 1, 4) == "DCL:" then
+				automata.patterns[pattern_id].status = "active"
+			end
+			--update the form
+			automata.show_rc_form(pname)
+		end
 		--actual form submissions
 		if fields.exit == "Activate" then
 			if automata.new_pattern(pname) then

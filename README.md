@@ -1,4 +1,4 @@
-# automata v.0.0.4
+# automata v.0.0.5
 ### A minetest mod for growing various cellular automata, including conway's game of life...
 
 ## Installation
@@ -33,24 +33,30 @@ Alternatively you can select a Game of Life pattern from the right-hand list. Do
 - Leaving the game leaves all active and inactive automata cells in the map dormant forever. Persistence will be in a future release.
 
 ## Next Steps in Development
-- improve the form:
+-improve the form:
     - field for conversion of NKS codes to readable codes
     - buttons for presets and /or a list of previously used rules
     - way to import saved schems or use //set or //mix (worldedit isn't running on_construct)
 	- importing from a larger library of saved patterns (.rle, .cells and .lif v1.06 support) http://conwaylife.com/wiki/Main_Page
 	- an "Admin" tab visible to players with the 'automata' priv to modify default settings
+	- allow player to list the "trail" blocks to leave a more colorful trail
 
 -new automata types:
     - rules for 2D and 3D automata which check for specific neighbor positions (non-totalistic)
     - support of Moore and von Neumann neighborhoods (diamonds) of more than 1 unit distance and 3D implementations (n-depth)
     - an anti-cell which could be used to implement 0-neighbor birth rules within defined extent (or not)
-- other improvements
-    - improve efficiency, use LVM especially for 3D patterns
-	- allow 1D patterns to grow faster otherwise they are a little boring
+
+-other improvements
+    - improve efficiency, voxelManip has made 1D and 2D patterns take longer; VM not fully utilized
+	- will probably make larger (3D) patterns grow less often and smaller (1D) patterns more often
     - need a way to persist/resume after quit/crash: need to save some tables to file on update, reload and reactivate at mod load
 
 For other known issues and planned improvements see: https://github.com/bobombolo/automata/issues
-	
+
+##New since v.0.0.4
+- implemented the Lua Voxel Manipulator instead of set_node()
+- small form bug fixes
+
 ##New since v.0.0.3
 - improved form with management tab, better validation, persistence
 - 1D automata introduced
@@ -73,10 +79,10 @@ For other known issues and planned improvements see: https://github.com/bobombol
 - efficiency greatly improved, started maintaining pmin and pmax
 - much improved rule form and form validation
 
-## License
+##License
 Author: bobomb, License: WTFPL
 
-## screenshots
+##Screenshots
 
 "Single" mode
 
