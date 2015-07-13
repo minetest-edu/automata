@@ -37,7 +37,7 @@ minetest.register_node("automata:inactive", {
 		local meta = minetest.get_meta(pos)
 		meta:set_string("infotext", "\"Inactive Automata\"")
 		--register the cell in the cell registry
-		automata.inactive_cells[minetest.hash_node_position(pos)] = true
+		automata.inactive_cells[minetest.hash_node_position(pos)] = pos
 		--minetest.log("action", "inactive: "..dump(automata.inactive_cells))
 	end,
 	on_dig = function(pos)
@@ -246,9 +246,7 @@ function automata.grow(pattern_id)
 	end	
 	
 	--loop through cell list
-	for pos_hash,v in next, automata.patterns[pattern_id].cell_list do
-		local pos = minetest.get_position_from_hash(pos_hash) --@todo, figure out how to add / subtract hashes
-		
+	for pos_hash, pos in next, automata.patterns[pattern_id].cell_list do		
 		if rules.neighbors == 2 then --non-totalistic rules
 			local code1d = automata.toBits(rules.code1d, 8) --rules 3,4,7,8 apply to already-on cells
 			--test the plus neighbor
@@ -258,13 +256,13 @@ function automata.grow(pattern_id)
 			if automata.patterns[pattern_id].cell_list[minetest.hash_node_position(pluspos)] then
 				plus = 1
 			else
-				empty_neighbors[minetest.hash_node_position(pluspos)] = true
+				empty_neighbors[minetest.hash_node_position(pluspos)] = pluspos
 			end
 			--test the minus neighbor
 			if automata.patterns[pattern_id].cell_list[minetest.hash_node_position(minuspos)] then
 				minus = 1
 			else
-				empty_neighbors[minetest.hash_node_position(minuspos)] = true
+				empty_neighbors[minetest.hash_node_position(minuspos)] = minuspos
 			end
 			if ( not plus and not minus and code1d[3]==1 )
 			or (     plus and not minus and code1d[4]==1 )
@@ -301,7 +299,7 @@ function automata.grow(pattern_id)
 				if automata.patterns[pattern_id].cell_list[minetest.hash_node_position(npos)] then
 					same_count = same_count +1
 				else
-					empty_neighbors[minetest.hash_node_position(npos)] = true
+					empty_neighbors[minetest.hash_node_position(npos)] = npos
 				end
 			end
 			--now we have a same neighbor count, apply life and death rules
@@ -320,7 +318,7 @@ function automata.grow(pattern_id)
 					if is_final == 1 then
 						table.insert(life_list, pos) --when node is actually set we will add to new_cell_list
 					else
-						new_cell_list[pos_hash] = true --if grow_distance==0 we just let it be but add to new_cell_list
+						new_cell_list[pos_hash] = pos --if grow_distance==0 we just let it be but add to new_cell_list
 					end
 				end
 				
@@ -331,8 +329,7 @@ function automata.grow(pattern_id)
 		end
 	end
 	--loop through the new total neighbors list looking for births
-	for epos_hash,v in next, empty_neighbors do
-		local epos = minetest.get_position_from_hash(epos_hash) --@todo, figure out how to add / subtract hashes
+	for epos_hash, epos in next, empty_neighbors do
 		if rules.neighbors == 2 then --non-totalistic rules
 			local code1d = automata.toBits(rules.code1d, 8) --rules 1,2,5,6 apply to already-on cells and 1 is un-implementable
 			--test the plus neighbor
@@ -420,7 +417,7 @@ function automata.grow(pattern_id)
 			else
 				data[vi] = minetest.get_content_id("automata:active")
 				--add to cell_list
-				new_cell_list[minetest.hash_node_position(bpos)] = true
+				new_cell_list[minetest.hash_node_position(bpos)] = bpos
 			end
 		end
 	end
@@ -435,7 +432,7 @@ function automata.grow(pattern_id)
 		--update pmin and pmax
 		--it would be nice to do this at each new_cell_list assignment above, but it is cleaner to just loop through all of them here
 		for k,v in next, new_cell_list  do
-			local p = minetest.get_position_from_hash(k)
+			local p = minetest.get_position_from_hash(k) -- this prevents lua table pass by ref
 			if xmin == nil then --this should only run on the very first cell
 				xmin = p.x ; xmax = p.x ; ymin = p.y ; ymax = p.y ; zmin = p.z ; zmax = p.z
 			else
@@ -511,7 +508,7 @@ function automata.new_pattern(pname, offsets, rule_override)
 				else --3D, no grow_axis
 					cell = ppos
 				end
-				hashed_cells[minetest.hash_node_position(cell)] = true
+				hashed_cells[minetest.hash_node_position(cell)] = cell
 			end
 		else
 			hashed_cells = automata.inactive_cells
@@ -522,7 +519,7 @@ function automata.new_pattern(pname, offsets, rule_override)
 		--update pmin and pmax
 		--it would be nice to do this at each new_cell_list assignment above, but it is cleaner to just loop through all of them here
 		for k,v in next, hashed_cells  do
-			local p = minetest.get_position_from_hash(k)
+			local p = minetest.get_position_from_hash(k) --this prevents lua table pass by ref
 			if xmin == nil then --this should only run on the very first cell
 				xmin = p.x ; xmax = p.x ; ymin = p.y ; ymax = p.y ; zmin = p.z ; zmax = p.z
 			else
@@ -544,9 +541,7 @@ function automata.new_pattern(pname, offsets, rule_override)
 		local emin, emax = vm:read_from_map(pmin, pmax)
 		local area = VoxelArea:new({MinEdge=emin, MaxEdge=emax})
 		local data = vm:get_data()
-		for pos_hash,_ in pairs(hashed_cells) do --@todo check ownership of node? lock registry?
-			local pos = minetest.get_position_from_hash(pos_hash)
-		
+		for pos_hash, pos in pairs(hashed_cells) do --@todo check ownership of node? lock registry?
 			local vi = area:index(pos.x, pos.y, pos.z)
 			data[vi] = minetest.get_content_id("automata:active")
 			cell_count = cell_count + 1
@@ -558,19 +553,13 @@ function automata.new_pattern(pname, offsets, rule_override)
 		---------------------------------------------------
 		local timer = (os.clock() - t1) * 1000
 		--add the cell list to the active cell registry with the gens, rules hash, and cell list
-		local values = {creator=pname, status="active", iteration=0, rules=rules, cell_count=cell_count, cell_list=hashed_cells, pmin=pmin, pmax=pmax, t_timer=timer}
+		local values = {creator=pname, status="active", iteration=0, rules=rules, cell_count=cell_count, cell_list=hashed_cells, pmin=pmin, pmax=pmax, t_timer=timer, last_grow=os.clock()}
 		automata.patterns[pattern_id] = values --overwrite placeholder
 		return true
 	else 
 		return false 
 	end
 end
-
---the formspecs and related settings and functions / selected field variables
-automata.player_settings = {} --per player form persistence
-automata.open_tab5 = {} --who has tab 5 (Manage) open at any moment
-automata.lifs = {} --indexed table of lif names
-automata.lifnames = "" --string of all lif file names
 
 --[[
 METHOD: automata.rules_validate(pname, rule_override)
@@ -739,83 +728,6 @@ function automata.explode(source, delimiters)
 	return elements
 end
 
---[[
-METHOD: automata.new_pattern(pname, offset_list)
-RETURN: true/false
-DESC: calls rules_validate() can activate inactive_cells or initialize from a list
-TODO: heavy development of the formspec expected
---]]
-function automata.new_pattern(pname, offsets, rule_override)
-	local t1 = os.clock()
-	local xmin,ymin,zmin,xmax,ymax,zmax	
-	-- form validation
-	local rules = automata.rules_validate(pname, rule_override) --will be false if rules don't validate
-	
-	--minetest.log("action", "rules after validate: "..dump(rules))
-	
-	if rules then --in theory bad rule settings in the form should fail validation and throw a popup
-		--create the new pattern id empty
-		table.insert(automata.patterns, true) --placeholder to get id
-		local pattern_id = #automata.patterns
-		local pos = {}
-		local hashed_cells = {}
-		local cell_count=0
-		
-		--are we being supplied with a list of offsets?
-		if offsets then
-			local player = minetest.get_player_by_name(pname)
-			local ppos = player:getpos()
-			ppos = {x=math.floor(ppos.x), y=math.floor(ppos.y), z=math.floor(ppos.z)} --remove decimals
-			--minetest.log("action", "rules: "..dump(rules))
-			for k,offset in next, offsets do
-				local cell = {}
-				if rules.grow_axis == "x" then
-					cell = {x = ppos.x, y=ppos.y+offset.n, z=ppos.z+offset.e}
-				elseif rules.grow_axis == "y" then 
-					cell = {x = ppos.x+offset.e, y=ppos.y, z=ppos.z+offset.n}
-				elseif rules.grow_axis == "z" then
-					cell = {x = ppos.x-offset.e, y=ppos.y+offset.n, z=ppos.z}
-				else --3D, no grow_axis
-					cell = ppos
-				end
-				hashed_cells[minetest.hash_node_position(cell)] = true
-			end
-		else
-			hashed_cells = automata.inactive_cells
-		end
-		
-		
-		--activate all inactive nodes @todo handle this with voxelmanip
-		for pos_hash,_ in pairs(hashed_cells) do --@todo check ownership of node? lock registry?
-			pos = minetest.get_position_from_hash(pos_hash)
-			minetest.set_node(pos, {name="automata:active"})
-			cell_count = cell_count + 1
-			
-			local p = minetest.get_position_from_hash(pos_hash)
-			if xmin == nil then --this should only run on the very first cell
-				xmin = p.x ; xmax = p.x ; ymin = p.y ; ymax = p.y ; zmin = p.z ; zmax = p.z
-			else
-				if p.x > xmax then xmax = p.x end
-				if p.x < xmin then xmin = p.x end
-				if p.y > ymax then ymax = p.y end
-				if p.y < ymin then ymin = p.y end
-				if p.z > zmax then zmax = p.z end
-				if p.z < zmin then zmin = p.z end
-			end		
-		end
-		local pmin = {x=xmin,y=ymin,z=zmin}
-		local pmax = {x=xmax,y=ymax,z=zmax}
-		
-		local timer = (os.clock() - t1) * 1000
-		--add the cell list to the active cell registry with the gens, rules hash, and cell list
-		local values = {creator=pname, status="active", iteration=0, rules=rules, cell_count=cell_count, cell_list=hashed_cells, pmin=pmin, pmax=pmax, t_timer=timer, last_grow=os.clock()}
-		automata.patterns[pattern_id] = values --overwrite placeholder
-		return true
-	else
-		return false 
-	end
-end
-
 -- Processing the form from the RC
 minetest.register_on_player_receive_fields(function(player, formname, fields)
 	--minetest.log("action", "fields submitted: "..dump(fields))
@@ -851,9 +763,9 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 			--translate the pid_id back to a pattern_id
 			local pid_id = string.sub(fields.pid_id, 5)
 			local pattern_id = automata.open_tab5[pname][tonumber(pid_id)] --this table is created in show_rcform() survives changes to patterns table
-			if string.sub(fields.pid_id, 1, 4) == "CHG:" then
+			if string.sub(fields.pid_id, 1, 4) == "CHG:" and automata.patterns[pattern_id].status == "active" then
 				automata.patterns[pattern_id].status = "paused"
-			elseif string.sub(fields.pid_id, 1, 4) == "DCL:" then
+			elseif string.sub(fields.pid_id, 1, 4) == "DCL:" and automata.patterns[pattern_id].status == "paused" then
 				automata.patterns[pattern_id].status = "active"
 			end
 			--update the form
@@ -877,6 +789,12 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 	end
 end)
 
+
+--the formspecs and related settings and functions / selected field variables
+automata.player_settings = {} --per player form persistence
+automata.open_tab5 = {} --who has tab 5 (Manage) open at any moment
+automata.lifs = {} --indexed table of lif names
+automata.lifnames = "" --string of all lif file names
 
 --this is run at load time (see EOF)
 function automata.load_lifs()

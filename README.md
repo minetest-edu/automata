@@ -101,6 +101,8 @@ Author: bobomb, License: WTFPL
 
 ![screenshot_2030616024](https://cloud.githubusercontent.com/assets/12679496/8044138/0b5d4340-0de8-11e5-8b84-6fe2a224337a.png)
 
+![screenshot_11245761](https://cloud.githubusercontent.com/assets/12679496/8659575/2095d56e-2969-11e5-8cbb-a0e469373e5a.png)
+
 "Activate" mode
 
 ![screenshot_2030738253](https://cloud.githubusercontent.com/assets/12679496/8044136/0b51f01c-0de8-11e5-84cf-36615741fc4b.png)
