@@ -133,7 +133,6 @@ function automata.grow(pattern_id)
 	--update the pattern values: iteration, last_cycle
 	local iteration = automata.patterns[pattern_id].iteration +1
 	automata.patterns[pattern_id].iteration = iteration
-	automata.patterns[pattern_id].last_cycle = automata.current_cycle
 	local death_list ={} --cells that will be set to rules.trail at the end of grow()
 	local life_list = {} --cells that will be set to automata:active at the end of grow()
 	local empty_neighbors = {} --non -active neighbor cell list to be tested for births
@@ -141,7 +140,10 @@ function automata.grow(pattern_id)
 							 -- some of ^ will be cells that survived in a grow_distance=0 ruleset
 							 -- ^ this is to save the time of setting nodes for survival cells
 	local ccount = 0
+	
 	local xmin,ymin,zmin,xmax,ymax,zmax
+	local pmin = automata.patterns[pattern_id].pmin
+	local pmax = automata.patterns[pattern_id].pmax
 	
 	--load the rules
 	local rules = automata.patterns[pattern_id].rules
@@ -149,12 +151,39 @@ function automata.grow(pattern_id)
 	if iteration == rules.gens then
 		is_final = 1
 	end
+	---------------------------------------------------
+	--  VOXEL MANIP
+	---------------------------------------------------
+	local vm = minetest.get_voxel_manip()
+	--define a voxelArea that will include the pattern plus all potential new cells,
+	--for 3D patterns we need 1 in all directions, for 0 grow_distances we need 1 in 
+	--the direction of growth, and otherwise we need grow_distance in the grow_direction, 
+	--but for now we keep it simpler and add 1 or grow_distance in ALL directions. 
+	--@TODO when we start using the voxelArea indexes for all calculations, and stop 
+	--storing absolute positions and converting between pos_hashes and requesting area:index() 
+	--for each cell, this will change. see https://github.com/bobombolo/automata/issues/29
+	local e 
+	if rules.neighbors > 8 or rules.grow_distance == "" or rules.grow_distance == 0 then 
+		e = 1
+		rules.grow_distance = 0
+	else e = math.abs(rules.grow_distance) end
+	
+	local emin, emax = vm:read_from_map({x=pmin.x-e,
+										 y=pmin.y-e,
+										 z=pmin.z-e},
+										{x=pmax.x+e,
+										 y=pmax.y+e,
+										 z=pmax.z+e}
+										)
+	local area = VoxelArea:new({MinEdge=emin, MaxEdge=emax})
+	local data = vm:get_data()	
+	--local xstride = emax.x-emin.x+1
+	--local ystride = emax.y-emin.y+1
+
 	--adding a rainbow mode. will later check for rules.rainbow, which could even be a strong of content_ids
 	--local rainbow = {"black","brown","dark_green","dark_grey","grey","white","pink","red","orange","yellow","green","cyan","blue","magenta","violet"}
 	--rules.trail = "wool:"..rainbow[ iteration - 1 - ( #rainbow * math.floor((iteration - 1) / #rainbow) ) + 1 ]
-	
-	if not rules.grow_distance then rules.grow_distance = 0 end --in the case of 3D!
-	
+
 	local neighborhood= {}
 	local growth_offset = {x=0,y=0,z=0} --again this default is for 3D @TODO should skip the application of offset lower down
 		
@@ -171,13 +200,13 @@ function automata.grow(pattern_id)
 	-- 1D neighbors
 	if rules.neighbors ==2 then
 		if rules.axis == "x" then
-			neighborhood.plus = {x=  1,y=  0,z=  0}
+			neighborhood.plus =  {x=  1,y=  0,z=  0}
 			neighborhood.minus = {x= -1,y=  0,z=  0}
 		elseif rules.axis == "z" then
-			neighborhood.plus = {x=  0,y=  0,z=  1}
+			neighborhood.plus =  {x=  0,y=  0,z=  1}
 			neighborhood.minus = {x=  0,y=  0,z= -1}
 		else --rules.axis == "y"
-			neighborhood.plus = {x=  0,y=  1,z=  0}
+			neighborhood.plus =  {x=  0,y=  1,z=  0}
 			neighborhood.minus = {x=  0,y= -1,z=  0}
 		end
 	else --2D and 3D neighbors
@@ -244,9 +273,22 @@ function automata.grow(pattern_id)
 			neighborhood.bnw = {x= -1,y= -1,z=  1}
 		end
 	end	
+	--convert the neighbor position offsets to voxelArea index offsets
+	--local neighborhood_vi_offsets = {}
+	--for k, offset in next, neighborhood do
+	--	neighborhood_vi_offsets[k] = (offset.z * ystride * xstride) + (offset.y * xstride) + offset.x
+	--end
+	--load the cell_list as vis
+	local vi_list = {}
+	--for pos_hash, pos in next, automata.patterns[pattern_id].cell_list do
+	--	table.insert(vi_list, area:index(pos.x, pos.y, pos.z))
+	--end
 	
 	--loop through cell list
 	for pos_hash, pos in next, automata.patterns[pattern_id].cell_list do		
+		--get the voxelArea index
+		local pos_vi = area:index(pos.x, pos.y, pos.z)
+		
 		if rules.neighbors == 2 then --non-totalistic rules
 			local code1d = automata.toBits(rules.code1d, 8) --rules 3,4,7,8 apply to already-on cells
 			--test the plus neighbor
@@ -291,11 +333,11 @@ function automata.grow(pattern_id)
 			
 		else --totalistic ruleset
 			local same_count = 0
-			
 			for k, offset in next, neighborhood do
+				
 				--add the offsets to the position @todo although this isn't bad
 				local npos = {x=pos.x+offset.x, y=pos.y+offset.y, z=pos.z+offset.z}
-				--look in the cell list
+				--look in the cell list		
 				if automata.patterns[pattern_id].cell_list[minetest.hash_node_position(npos)] then
 					same_count = same_count +1
 				else
@@ -372,33 +414,6 @@ function automata.grow(pattern_id)
 		end
 	end
 	
-	local pmin = automata.patterns[pattern_id].pmin
-	local pmax = automata.patterns[pattern_id].pmax
-	---------------------------------------------------
-	--  VOXEL MANIP
-	---------------------------------------------------
-	local vm = minetest.get_voxel_manip()
-	--define a voxelArea that will include the pattern plus all potential new cells,
-	--for 3D patterns we need 1 in all directions, for 0 grow_distances we need 1 in 
-	--the direction of growth, and otherwise we need grow_distance in the grow_direction, 
-	--but for now we keep it simpler and add 1 or grow_distance in ALL directions. 
-	--@TODO when we start using the voxelArea indexes for all calculations, and stop 
-	--storing absolute positions and converting between pos_hashes and requesting area:index() 
-	--for each cell, this will change. see https://github.com/bobombolo/automata/issues/29
-	local e 
-	if rules.neighbors > 8 or rules.grow_distance == "" or rules.grow_distance == 0 then e = 1
-	else e = math.abs(rules.grow_distance) end
-	
-	local emin, emax = vm:read_from_map({x=pmin.x-e,
-										 y=pmin.y-e,
-										 z=pmin.z-e},
-										{x=pmax.x+e,
-										 y=pmax.y+e,
-										 z=pmax.z+e}
-										)
-	local area = VoxelArea:new({MinEdge=emin, MaxEdge=emax})
-	local data = vm:get_data()
-	
 	--set the nodes for deaths
 	for _,dpos in next, death_list do
 		local vi = area:index(dpos.x, dpos.y, dpos.z)
@@ -431,8 +446,8 @@ function automata.grow(pattern_id)
 	if is_final ~= 1 and next(new_cell_list) then
 		--update pmin and pmax
 		--it would be nice to do this at each new_cell_list assignment above, but it is cleaner to just loop through all of them here
-		for k,v in next, new_cell_list  do
-			local p = minetest.get_position_from_hash(k) -- this prevents lua table pass by ref
+		for k,p in next, new_cell_list  do
+			--local p = minetest.get_position_from_hash(k) -- this prevents lua table pass by ref
 			if xmin == nil then --this should only run on the very first cell
 				xmin = p.x ; xmax = p.x ; ymin = p.y ; ymax = p.y ; zmin = p.z ; zmax = p.z
 			else
