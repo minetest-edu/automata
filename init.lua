@@ -136,14 +136,14 @@ function automata.grow(pattern_id)
 	local iteration = automata.patterns[pattern_id].iteration +1
 	automata.patterns[pattern_id].iteration = iteration
 	local death_list ={} --cells that will be set to rules.trail at the end of grow()
-	local life_list = {} --cells that will be set to automata:active at the end of grow()
+	local birth_list = {} --cells that will be set to automata:active at the end of grow()
 	local empty_neighbors = {} --non -active neighbor cell list to be tested for births
 	local cell_count = 0 --since the indexes is keyed by vi, can't do #indexes
 	--local new_cell_list = {} --the final cell list to transfer back to automata.patterns[pattern_id]
 							 -- some of ^ will be cells that survived in a grow_distance=0 ruleset
 							 -- ^ this is to save the time of setting nodes for survival cells
 	local xmin,ymin,zmin,xmax,ymax,zmax --for the new pmin and pmax
-
+	
 	--load the rules
 	local rules = automata.patterns[pattern_id].rules
 	local is_final = 0
@@ -187,7 +187,7 @@ function automata.grow(pattern_id)
 	local new_indexes = {}
 	local new_xstride = new_emin.x-new_emin.x+1
 	local new_ystride = new_emin.y-new_emin.y+1
-		
+	
 	local data = vm:get_data()
 	
 	--simple function that adds a position to new_cell_list, detects a new pmin and/or pmax, count+1
@@ -305,11 +305,12 @@ function automata.grow(pattern_id)
 	for k, offset in next, neighborhood do
 		neighborhood_vis[k] = (offset.z * old_ystride * old_xstride) + (offset.y * old_xstride) + offset.x
 	end
+	print("nlist: "..dump(neighborhood).."ni list: "..dump(neighborhood_vis))
 	--convert the growth offset to index offset for new area
 	local growth_vi = (growth_offset.z * new_ystride * new_xstride) + (growth_offset.y * new_xstride) + growth_offset.x
-	
+	print("gen: "..iteration..", cells: "..dump(old_indexes))
 	--CELL SURVIVAL TESTING LOOP: tests all old_indexes against rules.survival or code1d[3,4,7,8]
-	for pos_vi, pos in next, old_indexes do		
+	for old_pos_vi, pos in next, old_indexes do		
 		local survival = false
 		--we need to convert the old index to the new index regardless of survival/death
 		local new_pos_vi = new_area:indexp(pos)
@@ -318,14 +319,14 @@ function automata.grow(pattern_id)
 			local code1d = automata.toBits(rules.code1d, 8) --rules 3,4,7,8 apply to already-on cells
 			local plus, minus
 			--test the plus neighbor
-			local pluspos_vi  = pos_vi + neighborhood_vis.plus
+			local pluspos_vi  = old_pos_vi + neighborhood_vis.plus
 			if old_indexes[pluspos_vi] then plus  = 1
 			else empty_neighbors[pluspos_vi] = {x=pos.x+neighborhood.plus.x,
 												y=pos.y+neighborhood.plus.y,
 												z=pos.z+neighborhood.plus.z}
 			end
 			--test the minus neighbor
-			local minuspos_vi = pos_vi + neighborhood_vis.minus
+			local minuspos_vi = old_pos_vi + neighborhood_vis.minus
 			if old_indexes[minuspos_vi] then minus = 1 
 			else empty_neighbors[minuspos_vi] = {x=pos.x+neighborhood.minus.x,
 												 y=pos.y+neighborhood.minus.y,
@@ -344,8 +345,8 @@ function automata.grow(pattern_id)
 			local same_count = 0
 			for k, vi_offset in next, neighborhood_vis do
 				
-				--add the offsets to the position
-				local n_vi = pos_vi + vi_offset
+				--add the neighbor offsets to the position
+				local n_vi = old_pos_vi + vi_offset
 				--test for sameness
 				if old_indexes[n_vi] then
 					same_count = same_count + 1
@@ -359,24 +360,22 @@ function automata.grow(pattern_id)
 			if rules.survive[same_count] then
 				survival = true
 			end
-			
 		end
 		if survival then
-		--add to life list				
+		--add to life list
 			if rules.grow_distance ~= 0 then
 				local gpos_vi = new_pos_vi + growth_vi
 				local gpos = {x=pos.x+growth_offset.x, y=pos.y+growth_offset.y, z=pos.z+growth_offset.z}
-				life_list[gpos_vi] = gpos --when node is actually set we will add to new_cell_list
+				birth_list[gpos_vi] = gpos --when node is actually set we will add to new_cell_list
 				death_list[new_pos_vi] = pos --with grow_distance ~= 0, the old pos dies leaving rules.trail
 			else
 				--in the case that this is the final iteration, we need to pass it to the life list afterall
 				if is_final == 1 then
-					life_list[new_pos_vi] = pos --when node is actually set we will add to new_cell_list
+					birth_list[new_pos_vi] = pos --when node is actually set we will add to new_cell_list
 				else
 					add_to_new_cell_list(new_pos_vi, pos) --if grow_distance==0 we just let it be but add to new_cell_list
 				end
 			end
-			
 		else
 			--death
 			death_list[new_pos_vi] = pos
@@ -414,7 +413,7 @@ function automata.grow(pattern_id)
 				--look in the cell list
 				local n_vi = epos_vi + vi_offset
 				--test for sameness
-				if old_indexes[n_vi] == c_automata then
+				if old_indexes[n_vi] then
 					same_count = same_count + 1
 				end
 			end
@@ -428,15 +427,17 @@ function automata.grow(pattern_id)
 			--add to life list
 			local bpos_vi = new_epos_vi + growth_vi
 			local bpos = {x=epos.x+growth_offset.x, y=epos.y+growth_offset.y, z=epos.z+growth_offset.z}
-			life_list[bpos_vi] = bpos --when node is actually set we will add to new_cell_list
+			birth_list[bpos_vi] = bpos --when node is actually set we will add to new_cell_list
 		end
 	end
+	print("deaths: "..dump(death_list))
 	--set the nodes for deaths
 	for dpos_vi, dpos in next, death_list do
 		data[dpos_vi] = c_trail
 	end
+	print("births: "..dump(birth_list))
 	--set the nodes for births
-	for bpos_vi, bpos in next, life_list do --@todo why is this processing an empty table life_list!?
+	for bpos_vi, bpos in next, birth_list do --@todo why is this processing an empty table birth_list!?
 		--test for destructive mode and if the node is occupied
 		if rules.destruct == "true" or data[bpos_vi] == c_air then
 			--test for final iteration
@@ -484,7 +485,6 @@ function automata.grow(pattern_id)
 	else
 		automata.patterns[pattern_id].status = "active" --set to growing in globalstep
 	end
-	
 	return true
 end
 
@@ -560,7 +560,7 @@ function automata.new_pattern(pname, offsets, rule_override)
 		local emin, emax = vm:read_from_map(pmin, pmax)
 		local area = VoxelArea:new({MinEdge=emin, MaxEdge=emax})
 		local data = vm:get_data()
-		for pos_hash, pos in pairs(hashed_cells) do --@todo check ownership of node? lock registry?
+		for pos_hash, pos in next, hashed_cells do --@todo check ownership of node? lock registry?
 			local vi = area:index(pos.x, pos.y, pos.z)
 			data[vi] = c_automata
 			new_indexes[vi] = pos
@@ -646,7 +646,10 @@ function automata.rules_validate(pname, rule_override)
 			if not axis then rules.axis = "x"  --with the dropdown on the form this default should never be used
 			else rules.axis = axis end
 			
-			if axis == grow_axis then automata.show_popup(pname, "the grow axis and main axis cannot be the same") return false end
+			if axis == grow_axis then
+				automata.show_popup(pname, "the grow axis and main axis cannot be the same") --not working most of time
+				return false 
+			end
 			
 		elseif tab == "2" then--fields specific to 2D
 			--n2d
@@ -1081,13 +1084,14 @@ function automata.show_rc_form(pname)
 end
 
 function automata.show_popup(pname, message)
-	--@TODO this popup isn't showing even though we GET HERE, was working at one time
-	
+	minetest.chat_send_player(pname, "Form error: "..message)
+	--@TODO this form isn't showing even though we GET HERE, was working at one time
 	minetest.show_formspec(pname, "automata:popup",
 								"size[10,8]" ..
 								"button_exit[1,1;2,1;exit;Back]"..
 								"label[1,3;"..minetest.formspec_escape(message).."]"
 	)
+	return true
 end
 
 function automata.singlenode(pname)
