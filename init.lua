@@ -178,15 +178,15 @@ function automata.grow(pattern_id)
 	local old_emax = automata.patterns[pattern_id].emax
 	--local old_area = VoxelArea:new({MinEdge=old_emin, MaxEdge=old_emax}) --need this to get position, nope
 	local old_indexes = automata.patterns[pattern_id].indexes
-	local old_xstride = old_emin.x-old_emin.x+1
-	local old_ystride = old_emin.y-old_emin.y+1
+	local old_xstride = old_emax.x-old_emin.x+1
+	local old_ystride = old_emax.y-old_emin.y+1
 	
 	local new_emin, new_emax = vm:read_from_map({x=old_pmin.x-e, y=old_pmin.y-e, z=old_pmin.z-e},
 												{x=old_pmax.x+e, y=old_pmax.y+e, z=old_pmax.z+e} )
 	local new_area = VoxelArea:new({MinEdge=new_emin, MaxEdge=new_emax})
 	local new_indexes = {}
-	local new_xstride = new_emin.x-new_emin.x+1
-	local new_ystride = new_emin.y-new_emin.y+1
+	local new_xstride = new_emax.x-new_emin.x+1
+	local new_ystride = new_emax.y-new_emin.y+1
 	
 	local data = vm:get_data()
 	
@@ -305,10 +305,8 @@ function automata.grow(pattern_id)
 	for k, offset in next, neighborhood do
 		neighborhood_vis[k] = (offset.z * old_ystride * old_xstride) + (offset.y * old_xstride) + offset.x
 	end
-	print("nlist: "..dump(neighborhood).."ni list: "..dump(neighborhood_vis))
 	--convert the growth offset to index offset for new area
 	local growth_vi = (growth_offset.z * new_ystride * new_xstride) + (growth_offset.y * new_xstride) + growth_offset.x
-	print("gen: "..iteration..", cells: "..dump(old_indexes))
 	--CELL SURVIVAL TESTING LOOP: tests all old_indexes against rules.survival or code1d[3,4,7,8]
 	for old_pos_vi, pos in next, old_indexes do		
 		local survival = false
@@ -430,12 +428,10 @@ function automata.grow(pattern_id)
 			birth_list[bpos_vi] = bpos --when node is actually set we will add to new_cell_list
 		end
 	end
-	print("deaths: "..dump(death_list))
 	--set the nodes for deaths
 	for dpos_vi, dpos in next, death_list do
 		data[dpos_vi] = c_trail
 	end
-	print("births: "..dump(birth_list))
 	--set the nodes for births
 	for bpos_vi, bpos in next, birth_list do --@todo why is this processing an empty table birth_list!?
 		--test for destructive mode and if the node is occupied
