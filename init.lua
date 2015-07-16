@@ -1,28 +1,7 @@
 automata = {}
---[[
-PROPERTY: automata.patterns
-TYPE: table
-DESC: patterns are a table of the current state of any automata patterns in the world
-FORMAT: automata.patterns[i] = {
-			creator = playername
-			iteration=0, -- the current generation of the pattern
-			rules=0, -- rule table
-			pmin=0, -- pmin and pmax give the bounding volume for pattern
-			pmax=0,
-			cell_count=0, -- how many active cells in pattern, 
-			cell_list={} -- indexed by position hash value = true		
---]]
-automata.patterns = {}
-
---[[
-PROPERTY: automata.inactive_cells
-TYPE: table
-DESC: a table of inactive cells to be activated by next use of the RemoteControl
-FORMAT: indexed by position hash value = true
-PERSISTENCE: this file is persisted to a file on change and loaded at mod start
-@TODO: might move this to the automata.patterns with a reserved id that grow() skips
---]]
-automata.inactive_cells = {}
+automata.patterns = {} -- master pattern list
+automata.grow_queue = {}
+automata.inactive_cells = {} -- automata:inactive nodes, activated with the remote
 
 --[[the nodes]]--
 -- new cell that requires activation
@@ -49,7 +28,6 @@ minetest.register_node("automata:inactive", {
 		return true
 	end,
 })
-
 -- an activated automata cell -- further handling of this node done by grow() via globalstep
 minetest.register_node("automata:active", {
 	description = "Active Automata",
@@ -99,99 +77,85 @@ minetest.register_craft({
 })
 -- REGISTER GLOBALSTEP
 minetest.register_globalstep(function(dtime)
-	automata.grow_all()
+	automata.process_queue()
 end)
 
-function automata.grow_all()
-	for pattern_id, v in next, automata.patterns do
-	--print(pattern_id)
-		if automata.patterns[pattern_id].status == "active" --pattern is not paused or finished
-		and minetest.get_player_by_name(automata.patterns[pattern_id].creator) --player in game
-		and (os.clock() - automata.patterns[pattern_id].last_grow) >= math.log(automata.patterns[pattern_id].cell_count)
-		then 
-			automata.patterns[pattern_id].status = "growing" --in case globalstep piles up?
-			automata.grow(pattern_id)
-			--update "manage" formspec for creator if tab 5 open
-			if automata.open_tab5[automata.patterns[pattern_id].creator] then
-				automata.show_rc_form(automata.patterns[pattern_id].creator)
-				--@TODO this sometimes fails to happen on finished patterns (issue #30)
+--the grow_queue logic
+function automata.process_queue()
+	for pattern_id, v in next, automata.grow_queue do
+	--print(dump(automata.patterns[pattern_id]))
+		if automata.grow_queue[pattern_id].lock == false --pattern is not paused or finished
+		and minetest.get_player_by_name(v.creator) --player in game
+		and (os.clock() - automata.grow_queue[pattern_id].last_grow) 
+			>= math.log(automata.grow_queue[pattern_id].size)
+		then
+			--lock pattern and do the grow()
+			automata.grow_queue[pattern_id].lock = true
+			local size = automata.grow(pattern_id, v.creator)
+			--update stats or kill the pattern
+			if size then
+				automata.grow_queue[pattern_id].size = size
+				automata.grow_queue[pattern_id].lock = false
+				automata.grow_queue[pattern_id].last_grow = os.clock()
+			else
+				automata.grow_queue[pattern_id] = nil
 			end
-		else
-			--print("nogrow")
+			--update "manage" formspec for creator if tab 5 open
+			if automata.open_tab5[v.creator] then
+				automata.show_rc_form(v.creator)
+				--@TODO this sometimes fails to happen on finished patterns (issue #30)
+				--also when lag is heavy this form can keep reopening on the player
+			end
 		end
 	end
 end
 
---[[
-METHOD: automata.grow(pattern_id)
-RETURN: nothing yet
-DESC: looks at each pattern, applies the rules to generate a death list, birth list then
-      then sets the nodes and updates the pattern table settings and cell_list
-TODO: use voxelmanip for this
---]]
-function automata.grow(pattern_id)
+-- looks at each pattern, applies the rules to generate a death list, birth list then
+-- then sets the nodes and updates the pattern table settings and indexes (cell list)
+function automata.grow(pattern_id, pname)
 	local t1 = os.clock()
-	
 	--update the pattern values: iteration, last_cycle
 	local iteration = automata.patterns[pattern_id].iteration +1
-	automata.patterns[pattern_id].iteration = iteration
 	local death_list ={} --cells that will be set to rules.trail at the end of grow()
 	local birth_list = {} --cells that will be set to automata:active at the end of grow()
-	local empty_neighbors = {} --non -active neighbor cell list to be tested for births
+	local empty_neighbors = {} --non-active neighbor cell list to be tested for births
 	local cell_count = 0 --since the indexes is keyed by vi, can't do #indexes
-	--local new_cell_list = {} --the final cell list to transfer back to automata.patterns[pattern_id]
-							 -- some of ^ will be cells that survived in a grow_distance=0 ruleset
-							 -- ^ this is to save the time of setting nodes for survival cells
-	local xmin,ymin,zmin,xmax,ymax,zmax --for the new pmin and pmax
-	
+	local xmin,ymin,zmin,xmax,ymax,zmax --for the new pmin and pmax -- used to pace grow()
 	--load the rules
 	local rules = automata.patterns[pattern_id].rules
 	local is_final = 0
 	if iteration == rules.gens then is_final = 1 end
-	
 	--content types to reduce lookups
 	local c_trail    = minetest.get_content_id(rules.trail)
 	local c_final    = minetest.get_content_id(rules.final)
 	local c_air      = minetest.get_content_id("air")
 	local c_automata = minetest.get_content_id("automata:active")
-	
-	---------------------------------------------------
-	--  VOXEL MANIP
-	---------------------------------------------------
+	--create a voxelManipulator instance
 	local vm = minetest.get_voxel_manip()
-	--define a voxelArea that will include the pattern plus all potential new cells,
-	--for 3D patterns we need 1 in all directions, for 0 grow_distances we need 1 in 
-	--the direction of growth, and otherwise we need grow_distance in the grow_direction, 
-	--but for now we keep it simpler and add 1 or grow_distance in ALL directions. 
-	--@TODO when we start using the voxelArea indexes for all calculations, and stop 
-	--storing absolute positions and converting between pos_hashes and requesting area:index() 
-	--for each cell, this will change. see https://github.com/bobombolo/automata/issues/29
+	--expand the voxel extent by neighbors and growth beyond last pmin and pmax
 	local e 
 	if rules.neighbors > 8 or rules.grow_distance == "" or rules.grow_distance == 0 then 
 		e = 1
 		rules.grow_distance = 0
 	else e = math.abs(rules.grow_distance) end
-	
 	local old_pmin = automata.patterns[pattern_id].pmin
 	local old_pmax = automata.patterns[pattern_id].pmax
-	local old_emin = automata.patterns[pattern_id].emin
-	local old_emax = automata.patterns[pattern_id].emax
-	--local old_area = VoxelArea:new({MinEdge=old_emin, MaxEdge=old_emax}) --need this to get position, nope
-	local old_indexes = automata.patterns[pattern_id].indexes
-	local old_xstride = old_emax.x-old_emin.x+1
-	local old_ystride = old_emax.y-old_emin.y+1
-	
 	local new_emin, new_emax = vm:read_from_map({x=old_pmin.x-e, y=old_pmin.y-e, z=old_pmin.z-e},
 												{x=old_pmax.x+e, y=old_pmax.y+e, z=old_pmax.z+e} )
 	local new_area = VoxelArea:new({MinEdge=new_emin, MaxEdge=new_emax})
 	local new_indexes = {}
 	local new_xstride = new_emax.x-new_emin.x+1
 	local new_ystride = new_emax.y-new_emin.y+1
-	
 	local data = vm:get_data()
+	--pull the old values which will make the indexes valid
+	local old_emin = automata.patterns[pattern_id].emin
+	local old_emax = automata.patterns[pattern_id].emax
+	local old_xstride = old_emax.x-old_emin.x+1
+	local old_ystride = old_emax.y-old_emin.y+1
+	--load the cell list from last iteration
+	local old_indexes = automata.patterns[pattern_id].indexes
 	
-	--simple function that adds a position to new_cell_list, detects a new pmin and/or pmax, count+1
-	--called about 6 different places throughout grow()
+	--simple function that adds a position to new_indexes, detects a new pmin and/or pmax, count+1
 	local function add_to_new_cell_list(vi, p)
 		new_indexes[vi] = p
 		cell_count = cell_count + 1
@@ -206,14 +170,9 @@ function automata.grow(pattern_id)
 			if p.z < zmin then zmin = p.z end
 		end
 	end
-	
-	--adding a rainbow mode. will later check for rules.rainbow, which could even be a strong of content_ids
-	--local rainbow = {"black","brown","dark_green","dark_grey","grey","white","pink","red","orange","yellow","green","cyan","blue","magenta","violet"}
-	--rules.trail = "wool:"..rainbow[ iteration - 1 - ( #rainbow * math.floor((iteration - 1) / #rainbow) ) + 1 ]
-	
+	--start compiling the absolute position and index offsets that represent neighbors and growth
 	local neighborhood= {}
 	local growth_offset = {x=0,y=0,z=0} --again this default is for 3D @TODO should skip the application of offset lower down
-	
 	-- determine neighborhood and growth offsets (works for 1D and 2D)
 	if rules.neighbors == 2 or rules.neighbors == 4 or rules.neighbors == 8 then
 		if rules.grow_axis == "x" then
@@ -303,10 +262,14 @@ function automata.grow(pattern_id)
 	--convert the neighbor position offsets to voxelArea index offsets in old area
 	local neighborhood_vis = {}
 	for k, offset in next, neighborhood do
-		neighborhood_vis[k] = (offset.z * old_ystride * old_xstride) + (offset.y * old_xstride) + offset.x
+		neighborhood_vis[k] = (offset.z * old_ystride * old_xstride)
+						    + (offset.y * old_xstride)
+						    +  offset.x
 	end
 	--convert the growth offset to index offset for new area
-	local growth_vi = (growth_offset.z * new_ystride * new_xstride) + (growth_offset.y * new_xstride) + growth_offset.x
+	local growth_vi = (growth_offset.z * new_ystride * new_xstride)
+					+ (growth_offset.y * new_xstride) 
+					+  growth_offset.x
 	--CELL SURVIVAL TESTING LOOP: tests all old_indexes against rules.survival or code1d[3,4,7,8]
 	for old_pos_vi, pos in next, old_indexes do		
 		local survival = false
@@ -337,12 +300,10 @@ function automata.grow(pattern_id)
 			or (     plus and     minus and code1d[8]==1 ) then
 				survival = true
 			end
-		
 		--CELL SURVIVAL TESTING: totalistic ruleset (ie 2D and 3D)
-		else 
+		else
 			local same_count = 0
 			for k, vi_offset in next, neighborhood_vis do
-				
 				--add the neighbor offsets to the position
 				local n_vi = old_pos_vi + vi_offset
 				--test for sameness
@@ -360,7 +321,7 @@ function automata.grow(pattern_id)
 			end
 		end
 		if survival then
-		--add to life list
+		--add to birth list with new position and death of old cell if growth is not 0
 			if rules.grow_distance ~= 0 then
 				local gpos_vi = new_pos_vi + growth_vi
 				local gpos = {x=pos.x+growth_offset.x, y=pos.y+growth_offset.y, z=pos.z+growth_offset.z}
@@ -369,23 +330,22 @@ function automata.grow(pattern_id)
 			else
 				--in the case that this is the final iteration, we need to pass it to the life list afterall
 				if is_final == 1 then
-					birth_list[new_pos_vi] = pos --when node is actually set we will add to new_cell_list
+					birth_list[new_pos_vi] = pos --when node is actually set we will add to new_indexes
 				else
-					add_to_new_cell_list(new_pos_vi, pos) --if grow_distance==0 we just let it be but add to new_cell_list
+					add_to_new_cell_list(new_pos_vi, pos) --bypass birth_list go straight to new_indexes
 				end
 			end
 		else
-			--death
+			--death of old cell in new voxelArea
 			death_list[new_pos_vi] = pos
 		end
 	end
-	
 	--CELL BIRTH TESTING: tests all empty_neighbors against rules.birth or code1d[1,2,5,6]
 	for epos_vi, epos in next, empty_neighbors do
 		local birth = false
 		--CELL BIRTH TESTING: non-totalistic rules (ie. 1D)
 		if rules.neighbors == 2 then
-			local code1d = automata.toBits(rules.code1d, 8) --rules 1,2,5,6 apply to already-on cells and 1 is un-implementable
+			local code1d = automata.toBits(rules.code1d, 8) --rules 1,2,5,6 apply to already-on cells
 			local plus, minus
 			--test the plus neighbor
 			local pluspos_vi  = epos_vi + neighborhood_vis.plus
@@ -396,7 +356,7 @@ function automata.grow(pattern_id)
 			if old_indexes[minuspos_vi] then minus = 1
 			end
 			--apply the birth rules
-			if ( not plus and not minus and code1d[1]==1 ) --could skip this as we already know it has at least one neighbor
+			if ( not plus and not minus and code1d[1]==1 ) --this is a given
 			or (     plus and not minus and code1d[2]==1 )
 			or ( not plus and     minus and code1d[5]==1 )
 			or (     plus and     minus and code1d[6]==1 ) then
@@ -406,9 +366,7 @@ function automata.grow(pattern_id)
 		else
 			local same_count = 0
 			for k, vi_offset in next, neighborhood_vis do
-				--add the offsets to the position @todo although this isn't bad
-				--local npos = {x=epos.x+offset.x, y=epos.y+offset.y, z=epos.z+offset.z}
-				--look in the cell list
+				--add the offsets to the position
 				local n_vi = epos_vi + vi_offset
 				--test for sameness
 				if old_indexes[n_vi] then
@@ -422,66 +380,50 @@ function automata.grow(pattern_id)
 		if birth then
 			--only if birth happens convert old_index to new_index
 			local new_epos_vi = new_area:indexp(epos)
-			--add to life list
+			--add to birth list
 			local bpos_vi = new_epos_vi + growth_vi
 			local bpos = {x=epos.x+growth_offset.x, y=epos.y+growth_offset.y, z=epos.z+growth_offset.z}
-			birth_list[bpos_vi] = bpos --when node is actually set we will add to new_cell_list
+			birth_list[bpos_vi] = bpos --when node is actually set we will add to new_indexes
 		end
 	end
-	--set the nodes for deaths
+	--apply deaths to data[]
 	for dpos_vi, dpos in next, death_list do
 		data[dpos_vi] = c_trail
 	end
-	--set the nodes for births
-	for bpos_vi, bpos in next, birth_list do --@todo why is this processing an empty table birth_list!?
+	--apply births to data[]
+	for bpos_vi, bpos in next, birth_list do
 		--test for destructive mode and if the node is occupied
 		if rules.destruct == "true" or data[bpos_vi] == c_air then
 			--test for final iteration
-			if is_final == 1 then
-				 data[bpos_vi] = c_final
-			else
-				 data[bpos_vi] = c_automata
+			if is_final == 1 then data[bpos_vi] = c_final
+			else data[bpos_vi] = c_automata
 			end
-			--add to cell_list even if final so that we can resume (feature to come)
-			add_to_new_cell_list(bpos_vi, bpos) --this is the only place we generate a p.
+			--add to new_indexes even if final so that we can resume
+			add_to_new_cell_list(bpos_vi, bpos)
 		end
 	end
-	
 	vm:set_data(data)
 	vm:write_to_map()
 	vm:update_map()
-	
-	--update the pattern values:
-	--pmin, pmax: the exact extent of the pattern
-	automata.patterns[pattern_id].pmin = {x=xmin,y=ymin,z=zmin}
-	automata.patterns[pattern_id].pmax = {x=xmax,y=ymax,z=zmax}
-	--cell_count is a useful metric and is used by grow_all() to pace the growth
-	automata.patterns[pattern_id].cell_count = cell_count
-	--cell_list is the table of pos_hash => pos of all cells in the pattern, will be replaced by indexes
-	--automata.patterns[pattern_id].cell_list = new_cell_list
-	--emin and emax are the emerged corners of the voxelArea for which indexes will be valid
-	automata.patterns[pattern_id].emin = new_emin
-	automata.patterns[pattern_id].emax = new_emax
-	--indexes are the cells listed in index format, will replace cell_list
-	automata.patterns[pattern_id].indexes = new_indexes
-	--profiling and growth pacing time info is recorded
+	--update pattern values
 	local timer = (os.clock() - t1) * 1000
-	automata.patterns[pattern_id].last_grow = os.clock()
-	automata.patterns[pattern_id].l_timer = timer
-	automata.patterns[pattern_id].t_timer = automata.patterns[pattern_id].t_timer + timer
-	
-	--print(string.format("pattern, "..pattern_id.." iteration #"..iteration.." elapsed time: %.2fms (cells: "..#new_cell_list.." )", timer))
-	
-	if is_final == 1 or next(new_indexes) == nil then
-	--change the status to finished -- resuming finished patterns is a coming feature
-		print ("pattern "..pattern_id.." completed at gen "..iteration.. " total proc. time: "..string.format("%.2fms", automata.patterns[pattern_id].t_timer).." final cells: "..cell_count)
-		minetest.chat_send_player(automata.patterns[pattern_id].creator, "pattern# "..pattern_id.." just completed at gen "..iteration)
-		
+	local values =  { pmin = {x=xmin,y=ymin,z=zmin}, pmax = {x=xmax,y=ymax,z=zmax}, 
+				      cell_count = cell_count, emin = new_emin, emax = new_emax,
+					  indexes = new_indexes, l_timer = timer, iteration = iteration,
+					  t_timer = automata.patterns[pattern_id].t_timer + timer,
+					  rules = rules, creator = pname
+				    }
+	automata.patterns[pattern_id] = values
+	if is_final == 1 then
 		automata.patterns[pattern_id].status = "finished"
-	else
-		automata.patterns[pattern_id].status = "active" --set to growing in globalstep
+		return false
 	end
-	return true
+	if next(new_indexes) == nil then
+		automata.patterns[pattern_id].status = "extinct"
+		return false
+	end
+	automata.patterns[pattern_id].status = "active"
+	return cell_count
 end
 
 --[[
@@ -496,7 +438,6 @@ function automata.new_pattern(pname, offsets, rule_override)
 	local rules = automata.rules_validate(pname, rule_override) --will be false if rules don't validate
 	local c_automata = minetest.get_content_id("automata:active")
 	--minetest.log("action", "rules after validate: "..dump(rules))
-	
 	if rules then --in theory bad rule settings in the form should fail validation and throw a popup
 		--create the new pattern id empty
 		table.insert(automata.patterns, true) --placeholder to get id
@@ -504,7 +445,6 @@ function automata.new_pattern(pname, offsets, rule_override)
 		local pos = {}
 		local hashed_cells = {}
 		local cell_count=0
-		
 		--are we being supplied with a list of offsets?
 		if offsets then
 			local player = minetest.get_player_by_name(pname)
@@ -528,8 +468,6 @@ function automata.new_pattern(pname, offsets, rule_override)
 			hashed_cells = automata.inactive_cells
 		end
 		local xmin,ymin,zmin,xmax,ymax,zmax
-		
-		
 		--update pmin and pmax
 		--it would be nice to do this at each new_cell_list assignment above, but it is cleaner to just loop through all of them here
 		for k,v in next, hashed_cells  do
@@ -548,7 +486,6 @@ function automata.new_pattern(pname, offsets, rule_override)
 		local pmin = {x=xmin,y=ymin,z=zmin}
 		local pmax = {x=xmax,y=ymax,z=zmax}
 		local new_indexes = {}
-		
 		---------------------------------------------------
 		--  VOXEL MANIP
 		---------------------------------------------------
@@ -562,15 +499,18 @@ function automata.new_pattern(pname, offsets, rule_override)
 			new_indexes[vi] = pos
 			cell_count = cell_count + 1
 		end
-
 		vm:set_data(data)
 		vm:write_to_map()
 		vm:update_map()
 		---------------------------------------------------
 		local timer = (os.clock() - t1) * 1000
 		--add the cell list to the active cell registry with the gens, rules hash, and cell list
-		local values = {creator=pname, status="active", iteration=0, rules=rules, cell_count = cell_count, cell_list=hashed_cells, pmin=pmin, pmax=pmax, emin=emin, emax=emax, t_timer=timer, indexes = new_indexes, last_grow=os.clock()}
+		local values = { creator=pname, status="active", iteration=0, rules=rules, 
+						 cell_count = cell_count, cell_list=hashed_cells, pmin=pmin, pmax=pmax,
+						 emin=emin, emax=emax, t_timer=timer, indexes = new_indexes }
 		automata.patterns[pattern_id] = values --overwrite placeholder
+		automata.grow_queue[pattern_id] = { lock = false, size = cell_count,
+											last_grow=os.clock(), creator = pname }
 		return true
 	else 
 		return false 
@@ -589,14 +529,12 @@ function automata.rules_validate(pname, rule_override)
 	 --minetest.log("action", "here :"..dump(fields))
 	--read the player settings to get the last tab and then validate the fields relevant for that tab
 	local tab = automata.get_player_setting(pname, "tab")
-	
 	--regardless we validate the growth options common to 1D, 2D and 3D automata
 	--gens
 	local gens = automata.get_player_setting(pname, "gens")
 	if not gens then rules.gens = 100
 	elseif tonumber(gens) > 0 and tonumber(gens) < 1001 then rules.gens = tonumber(gens)
 	else automata.show_popup(pname, "Generations must be between 1 and 1000-- you said: "..gens) return false end
-	
 	--trail
 	local trail = automata.get_player_setting(pname, "trail")
 	if not trail then rules.trail = "air" 
@@ -607,52 +545,42 @@ function automata.rules_validate(pname, rule_override)
 	if not final then rules.final = rules.trail 
 	elseif minetest.get_content_id(final) ~= 127 then rules.final = final
 	else automata.show_popup(pname, final.." is not a valid block type") return false end
-	
 	--destructive
 	local destruct = automata.get_player_setting(pname, "destruct")
 	if not destruct then rules.destruct = "false" 
 	else rules.destruct = destruct end
-	
 	--then validate fields common to 1D and 2D and importing 2D .LIF files (tab 4)
 	if tab == "1" or tab == "2" or tab == "4" then
-		
 		--grow_distance
 		local grow_distance = automata.get_player_setting(pname, "grow_distance")
 		if not grow_distance then rules.grow_distance = 0
 		elseif tonumber(grow_distance) then rules.grow_distance = tonumber(grow_distance) --@todo take modf()
 		else automata.show_popup(pname, "the grow distance needs to be an integer-- you said: "..grow_distance) return false end
-		
 		--grow_axis (for 2D implies the calculation plane, for 1D cannot be the same as "axis")
 		local grow_axis = automata.get_player_setting(pname, "grow_axis")
 		if not grow_axis then rules.grow_axis = "y" --with the dropdown on the form this default should never be used
 		else rules.grow_axis = grow_axis end
-		
 		--fields specific to 1D
 		if tab == "1"  then
 			rules.neighbors = 2 --implied (neighbors is used by grow() to determine dimensionality)
-			
 			--code1d (must be between 0 and 255 -- NKS rule numbers for 1D automata)
 			local code1d = automata.get_player_setting(pname, "code1d")
 			if not code1d then rules.code1d = 30 
 			elseif tonumber(code1d) >= 0 and tonumber(code1d) <= 255 then rules.code1d = tonumber(code1d)
 			else automata.show_popup(pname, "the 1D rule should be between 0 and 255-- you said: "..code1d) return false end
-			
 			--axis (this is the calculation axis and must not be the same as the grow_axis, only matters if tab=1)
 			local axis = automata.get_player_setting(pname, "axis")
 			if not axis then rules.axis = "x"  --with the dropdown on the form this default should never be used
 			else rules.axis = axis end
-			
 			if axis == grow_axis then
 				automata.show_popup(pname, "the grow axis and main axis cannot be the same") --not working most of time
 				return false 
 			end
-			
 		elseif tab == "2" then--fields specific to 2D
 			--n2d
 			local n2d = automata.get_player_setting(pname, "n2d")
 			if not n2d then rules.neighbors = 8 --with the dropdown on the form this default should never be used
 			else rules.neighbors = tonumber(n2d) end
-			
 			--code2d (must be in the format survive/birth, ie, 23/3)
 			local code2d = automata.get_player_setting(pname, "code2d")
 			if not code2d then code2d = "23/3" end
@@ -692,7 +620,6 @@ function automata.rules_validate(pname, rule_override)
 		local n3d = automata.get_player_setting(pname, "n3d")
 		if not n3d then rules.neighbors = 26 --with the dropdown on the form this default should never be used
 		else rules.neighbors = tonumber(n3d) end
-		
 		--code3d (must be in the format survive/birth, ie, 23/3)
 		local code3d = automata.get_player_setting(pname, "code3d")
 		if not code3d then code3d = "2,3/3" end 
@@ -751,41 +678,40 @@ end
 minetest.register_on_player_receive_fields(function(player, formname, fields)
 	--minetest.log("action", "fields submitted: "..dump(fields))
 	local pname = player:get_player_name()
-	
 	--this is the only situation where a exit ~= "" should open a form
 	if formname == "automata:popup" then
 		if fields.exit == "Back" then
 			automata.show_rc_form(pname)
 		end
 	end
-	
 	if formname == "automata:rc_form" then 
 		--handle open tab5, system needs to know who has tab5 open at any moment so that
 		-- it can be refreshed by globalstep activity...
 		if fields.quit or ( fields.tab ~= "5" and not fields.pid_id ) then 
 			automata.open_tab5[pname] = nil
 		end --reset to nil in on_player_receive_fields()
-		
 		--detect tab change but save all fields on every update including quit
 		local old_tab = automata.get_player_setting(pname, "tab")
 		for k,v in next, fields do
 			automata.player_settings[pname][k] = v --we will preserve field entries exactly as entered 
 		end
 		automata.save_player_settings()	
-		
 		if old_tab and old_tab ~= automata.get_player_setting(pname, "tab") then
 			automata.show_rc_form(pname)
 		end	
-		
 		--if the pid_id click or double-click field is submitted, we pause or unpause the pattern
 		if fields.pid_id then
 			--translate the pid_id back to a pattern_id
 			local pid_id = string.sub(fields.pid_id, 5)
 			local pattern_id = automata.open_tab5[pname][tonumber(pid_id)] --this table is created in show_rcform() survives changes to patterns table
 			if string.sub(fields.pid_id, 1, 4) == "CHG:" and automata.patterns[pattern_id].status == "active" then
+				automata.grow_queue[pattern_id] = nil
 				automata.patterns[pattern_id].status = "paused"
 			elseif string.sub(fields.pid_id, 1, 4) == "DCL:" and automata.patterns[pattern_id].status == "paused" then
 				automata.patterns[pattern_id].status = "active"
+				automata.grow_queue[pattern_id] = { lock = false, last_grow=os.clock(), creator = pname,
+													size = automata.patterns[pattern_id].cell_count
+												  }
 			end
 			--update the form
 			automata.show_rc_form(pname)
@@ -808,7 +734,6 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 	end
 end)
 
-
 --the formspecs and related settings and functions / selected field variables
 automata.player_settings = {} --per player form persistence
 automata.open_tab5 = {} --who has tab 5 (Manage) open at any moment
@@ -826,7 +751,6 @@ function automata.load_lifs()
 		end
 		lifsfile:close()
 	end
-
 	for k,v in next, automata.lifs do
 		automata.lifnames = automata.lifnames .. v .. ","
 	end
@@ -885,17 +809,14 @@ function automata.show_rc_form(pname)
 	elseif degree <= 135 then dir = "- X"
 	elseif degree <= 225 then dir = "- Z"
 	else   dir = "+ X" end
-	
 	local tab = automata.get_player_setting(pname, "tab")
 	if not tab then 
 		tab = "2"
 		automata.player_settings[pname] = {tab=tab}
 	end
-	
 	--handle open tab5, system needs to know who has tab5 open at any moment so that
 	-- it can be refreshed by globalstep activity...
 	if tab == "5" then automata.open_tab5[pname] = {} end --gets reset to nil in on_player_receive_fields()
-		
 	--load the default fields for the forms based on player's last settings
 	--gens
 	local gens = automata.get_player_setting(pname, "gens")
@@ -909,13 +830,11 @@ function automata.show_rc_form(pname)
 	--destructive
 	local destruct = automata.get_player_setting(pname, "destruct")
 	if not destruct then destruct = "false" end
-	
 	--set some formspec sections for re-use on all tabs
 	local f_header = 			"size[12,10]" ..
 								"tabheader[0,0;tab;1D, 2D, 3D, Import, Manage;"..tab.."]"..
 								"label[0,0;You are at x= "..math.floor(ppos.x)..
 								" y= "..math.floor(ppos.y).." z= "..math.floor(ppos.z).." and mostly facing "..dir.."]"
-	
 	--1D, 2D, 3D, Import
 	local f_grow_settings = 	"field[1,5;4,1;trail;Trail Block (eg: dirt);"..minetest.formspec_escape(trail).."]" ..
 								"field[1,6;4,1;final;Final Block (eg: default:mese);"..minetest.formspec_escape(final).."]" ..
@@ -937,7 +856,6 @@ function automata.show_rc_form(pname)
 		--grow_distance
 		local grow_distance = automata.get_player_setting(pname, "grow_distance")
 		if not grow_distance then grow_distance = "" end
-		
 		--grow_axis (for 2D implies the calculation plane, for 1D cannot be the same as "axis")
 		local grow_axis_id
 		local grow_axis = automata.get_player_setting(pname, "grow_axis")
@@ -946,17 +864,14 @@ function automata.show_rc_form(pname)
 			local idx = {x=1,y=2,z=3}
 			grow_axis_id = idx[grow_axis]
 		end
-		
 		local f_grow_distance = "field[1,4;4,1;grow_distance;Grow Distance (-1, 0, 1, 2 ...);"..minetest.formspec_escape(grow_distance).."]"
 		local f_grow_axis = 	"label[1,2.5; Growth Axis]"..
 								"dropdown[3,2.5;1,1;grow_axis;x,y,z;"..grow_axis_id.."]"
-		
 		--fields specific to 1D
 		if tab == "1"  then
 			--code1d (must be between 1 and 256 -- NKS rule numbers for 1D automata)
 			local code1d = automata.get_player_setting(pname, "code1d")
 			if not code1d then code1d = "" end
-			
 			--axis (this is the calculation axis and must not be the same as the grow_axis)
 			local axis_id
 			local axis = automata.get_player_setting(pname, "axis")
@@ -965,11 +880,9 @@ function automata.show_rc_form(pname)
 				local idx = {x=1,y=2,z=3}
 				axis_id = idx[axis]
 			end
-			
 			local f_code1d = 			"field[6,1;2,1;code1d;Rule# (eg: 30);"..minetest.formspec_escape(code1d).."]"
 			local f_axis = 				"label[1,1.5; Main Axis]"..
 										"dropdown[3,1.5;1,1;axis;x,y,z;"..axis_id.."]"
-			
 			minetest.show_formspec(pname, "automata:rc_form", 
 								f_header ..
 								f_grow_settings ..
@@ -989,7 +902,6 @@ function automata.show_rc_form(pname)
 				local idx = {}; idx["4"]=1; idx["8"]=2
 				n2d_id = idx[n2d]
 			end
-			
 			--code2d
 			local code2d = automata.get_player_setting(pname, "code2d")
 			if not code2d then code2d = "" end
@@ -997,8 +909,6 @@ function automata.show_rc_form(pname)
 			local f_n2d = 				"label[1,0.5;Neighbors]"..
 										"dropdown[3,0.5;1,1;n2d;4,8;"..n2d_id.."]"
 			local f_code2d = 			"field[6,1;6,1;code2d;Rules (eg: 23/3);"..minetest.formspec_escape(code2d).."]"
-			
-			
 			minetest.show_formspec(pname, "automata:rc_form", 
 								f_header ..
 								f_grow_settings ..
@@ -1032,15 +942,12 @@ function automata.show_rc_form(pname)
 			local idx = {}; idx["6"]=1; idx["18"]=2; idx["26"]=3
 			n3d_id = idx[n3d]
 		end
-		
 		--code3d
 		local code3d = automata.get_player_setting(pname, "code3d")
 		if not code3d then code3d = "" end
-		
 		local f_n3d = 		"label[1,0.5;Neighbors]"..
 							"dropdown[3,0.5;1,1;n3d;6,18,26;"..n3d_id.."]"
 		local f_code3d = 	"field[6,1;6,1;code3d;Rules (eg: 2,3,24,25/3,14,15,16);"..minetest.formspec_escape(code3d).."]"
-		
 		minetest.show_formspec(pname, "automata:rc_form", 
 								f_header ..
 								f_grow_settings ..
@@ -1055,14 +962,14 @@ function automata.show_rc_form(pname)
 		for k,v in next, automata.patterns do
 			if v.creator == pname then
 				i = i+1
-				patterns = 	patterns..","..minetest.formspec_escape("pattern: "..k --intentional comma to start blank line pid_id=1
-							.." status: "..v.status.." at gen: "..v.iteration.." size: "..v.cell_count.." cells")
+				patterns = 	patterns..","..minetest.formspec_escape("pattern: "..k
+							.." status: "..v.status.." at gen: "..v.iteration.." size: "
+							..v.cell_count.." cells, time: "..math.ceil(v.t_timer).."ms" )
 				automata.open_tab5[pname][i]=k --need this table to decode the form's pid_ids back to pattern_ids
 			end
 		end
 		local pid_id = automata.get_player_setting(pname, "pid_id")
 		if not pid_id then pid_id = 1 end
-		
 		local f_plist
 		if patterns == "" then f_plist = "label[1,1;no active patterns]"
 		else f_plist = 	"label[1,1;Your patterns]"..
@@ -1070,7 +977,6 @@ function automata.show_rc_form(pname)
 						"label[1,9.5;Single Click to Pause]"..
 						"label[5,9.5;Double Click to Resume]"
 		end
-		
 		minetest.show_formspec(pname, "automata:rc_form", 
 								f_header ..	f_plist
 								
