@@ -1,4 +1,4 @@
-# automata v.0.0.7
+# automata v.0.0.8
 ### A minetest mod for growing various cellular automata, including conway's game of life...
 
 ## Installation
@@ -53,6 +53,11 @@ Alternatively you can select a Game of Life pattern from the right-hand list. Do
 
 For other known issues and planned improvements see: https://github.com/bobombolo/automata/issues
 
+##New since v.0.0.7
+- major efficiency boost thanks to:
+    - re-factored to use voxelManip exclusively, eliminate unnecessary calls,
+    - no reading from the map, most indexes and positions calculated by arithmetic
+
 ##New since v.0.0.6
 - fixed a bug when pausing patterns in manage tab
 - improved efficiency by double by storing hashed positions with their actual positions ie, {x,y,z} to reduce calls to minetest.hash_node_position() and minetest.get_position_from_hash()
@@ -60,7 +65,7 @@ For other known issues and planned improvements see: https://github.com/bobombol
 
 ##New since v.0.0.5
 - fixed some mashed up code from merge (duplicate minetest.register()s)
-- refactored the growth period to be proportional to 4th root of the cell_count (in seconds)
+- refactored the growth period to be proportional to math.log(cell_count) (in seconds)
 
 ##New since v.0.0.4
 - implemented the Lua Voxel Manipulator instead of set_node()

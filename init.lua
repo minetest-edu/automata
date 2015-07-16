@@ -24,15 +24,6 @@ PERSISTENCE: this file is persisted to a file on change and loaded at mod start
 --]]
 automata.inactive_cells = {}
 
-function table.contains(table, element)
-  for _, value in pairs(table) do
-    if value == element then
-      return true
-    end
-  end
-  return false
-end
-
 --[[the nodes]]--
 -- new cell that requires activation
 minetest.register_node("automata:inactive", {
@@ -116,7 +107,7 @@ function automata.grow_all()
 	--print(pattern_id)
 		if automata.patterns[pattern_id].status == "active" --pattern is not paused or finished
 		and minetest.get_player_by_name(automata.patterns[pattern_id].creator) --player in game
-		and (os.clock() - automata.patterns[pattern_id].last_grow) >= 1
+		and (os.clock() - automata.patterns[pattern_id].last_grow) >= math.log(automata.patterns[pattern_id].cell_count)
 		then 
 			automata.patterns[pattern_id].status = "growing" --in case globalstep piles up?
 			automata.grow(pattern_id)
@@ -147,35 +138,17 @@ function automata.grow(pattern_id)
 	local death_list ={} --cells that will be set to rules.trail at the end of grow()
 	local life_list = {} --cells that will be set to automata:active at the end of grow()
 	local empty_neighbors = {} --non -active neighbor cell list to be tested for births
-	local new_cell_list = {} --the final cell list to transfer back to automata.patterns[pattern_id]
+	local cell_count = 0 --since the indexes is keyed by vi, can't do #indexes
+	--local new_cell_list = {} --the final cell list to transfer back to automata.patterns[pattern_id]
 							 -- some of ^ will be cells that survived in a grow_distance=0 ruleset
-							 -- ^ this is to save the time of setting nodes for survival cells	
-	local xmin,ymin,zmin,xmax,ymax,zmax
-	local pmin = automata.patterns[pattern_id].pmin
-	local pmax = automata.patterns[pattern_id].pmax
-	
-	--simple function that adds a position to new_cell_list, detects a new pmin and/or pmax, count+1
-	--called about 6 different places throughout grow()
-	local function add_to_new_cell_list(p)
-		--table.insert(new_cell_list, p)
-		table.insert(new_cell_list, p)
-		--cell_count = cell_count + 1
-		if xmin == nil then
-			xmin = p.x ; xmax = p.x ; ymin = p.y ; ymax = p.y ; zmin = p.z ; zmax = p.z
-		else
-			if p.x > xmax then xmax = p.x end
-			if p.x < xmin then xmin = p.x end
-			if p.y > ymax then ymax = p.y end
-			if p.y < ymin then ymin = p.y end
-			if p.z > zmax then zmax = p.z end
-			if p.z < zmin then zmin = p.z end
-		end
-	end
-	
+							 -- ^ this is to save the time of setting nodes for survival cells
+	local xmin,ymin,zmin,xmax,ymax,zmax --for the new pmin and pmax
+
 	--load the rules
 	local rules = automata.patterns[pattern_id].rules
 	local is_final = 0
 	if iteration == rules.gens then is_final = 1 end
+	
 	--content types to reduce lookups
 	local c_trail    = minetest.get_content_id(rules.trail)
 	local c_final    = minetest.get_content_id(rules.final)
@@ -199,25 +172,48 @@ function automata.grow(pattern_id)
 		rules.grow_distance = 0
 	else e = math.abs(rules.grow_distance) end
 	
-	local emin, emax = vm:read_from_map({x=pmin.x-e,
-										 y=pmin.y-e,
-										 z=pmin.z-e},
-										{x=pmax.x+e,
-										 y=pmax.y+e,
-										 z=pmax.z+e}
-										)
-	local area = VoxelArea:new({MinEdge=emin, MaxEdge=emax})
-	local data = vm:get_data()	
-	local xstride = emax.x-emin.x+1
-	local ystride = emax.y-emin.y+1
-
+	local old_pmin = automata.patterns[pattern_id].pmin
+	local old_pmax = automata.patterns[pattern_id].pmax
+	local old_emin = automata.patterns[pattern_id].emin
+	local old_emax = automata.patterns[pattern_id].emax
+	--local old_area = VoxelArea:new({MinEdge=old_emin, MaxEdge=old_emax}) --need this to get position, nope
+	local old_indexes = automata.patterns[pattern_id].indexes
+	local old_xstride = old_emin.x-old_emin.x+1
+	local old_ystride = old_emin.y-old_emin.y+1
+	
+	local new_emin, new_emax = vm:read_from_map({x=old_pmin.x-e, y=old_pmin.y-e, z=old_pmin.z-e},
+												{x=old_pmax.x+e, y=old_pmax.y+e, z=old_pmax.z+e} )
+	local new_area = VoxelArea:new({MinEdge=new_emin, MaxEdge=new_emax})
+	local new_indexes = {}
+	local new_xstride = new_emin.x-new_emin.x+1
+	local new_ystride = new_emin.y-new_emin.y+1
+		
+	local data = vm:get_data()
+	
+	--simple function that adds a position to new_cell_list, detects a new pmin and/or pmax, count+1
+	--called about 6 different places throughout grow()
+	local function add_to_new_cell_list(vi, p)
+		new_indexes[vi] = p
+		cell_count = cell_count + 1
+		if xmin == nil then
+			xmin = p.x ; xmax = p.x ; ymin = p.y ; ymax = p.y ; zmin = p.z ; zmax = p.z
+		else
+			if p.x > xmax then xmax = p.x end
+			if p.x < xmin then xmin = p.x end
+			if p.y > ymax then ymax = p.y end
+			if p.y < ymin then ymin = p.y end
+			if p.z > zmax then zmax = p.z end
+			if p.z < zmin then zmin = p.z end
+		end
+	end
+	
 	--adding a rainbow mode. will later check for rules.rainbow, which could even be a strong of content_ids
 	--local rainbow = {"black","brown","dark_green","dark_grey","grey","white","pink","red","orange","yellow","green","cyan","blue","magenta","violet"}
 	--rules.trail = "wool:"..rainbow[ iteration - 1 - ( #rainbow * math.floor((iteration - 1) / #rainbow) ) + 1 ]
-
+	
 	local neighborhood= {}
 	local growth_offset = {x=0,y=0,z=0} --again this default is for 3D @TODO should skip the application of offset lower down
-		
+	
 	-- determine neighborhood and growth offsets (works for 1D and 2D)
 	if rules.neighbors == 2 or rules.neighbors == 4 or rules.neighbors == 8 then
 		if rules.grow_axis == "x" then
@@ -304,113 +300,113 @@ function automata.grow(pattern_id)
 			neighborhood.bnw = {x= -1,y= -1,z=  1}
 		end
 	end	
-	--convert the neighbor position offsets to voxelArea index offsets
+	--convert the neighbor position offsets to voxelArea index offsets in old area
 	local neighborhood_vis = {}
 	for k, offset in next, neighborhood do
-		neighborhood_vis[k] = (offset.z * ystride * xstride) + (offset.y * xstride) + offset.x
+		neighborhood_vis[k] = (offset.z * old_ystride * old_xstride) + (offset.y * old_xstride) + offset.x
 	end
-	--convert the growth offset to index offset
-	local growth_vi = (growth_offset.z * ystride * xstride) + (growth_offset.y * xstride) + growth_offset.x
+	--convert the growth offset to index offset for new area
+	local growth_vi = (growth_offset.z * new_ystride * new_xstride) + (growth_offset.y * new_xstride) + growth_offset.x
 	
-	--loop through cell list and do the growing
-	for _, pos in next, automata.patterns[pattern_id].cell_list do		
-		--get the voxelArea index
-		local pos_vi = area:index(pos.x, pos.y, pos.z)
-		
-		if rules.neighbors == 2 then --non-totalistic rules
+	--CELL SURVIVAL TESTING LOOP: tests all old_indexes against rules.survival or code1d[3,4,7,8]
+	for pos_vi, pos in next, old_indexes do		
+		local survival = false
+		--we need to convert the old index to the new index regardless of survival/death
+		local new_pos_vi = new_area:indexp(pos)
+		--CELL SURVIVAL TESTING: non-totalistic rules (ie, 1D)
+		if rules.neighbors == 2 then
 			local code1d = automata.toBits(rules.code1d, 8) --rules 3,4,7,8 apply to already-on cells
+			local plus, minus
 			--test the plus neighbor
 			local pluspos_vi  = pos_vi + neighborhood_vis.plus
+			if old_indexes[pluspos_vi] then plus  = 1
+			else empty_neighbors[pluspos_vi] = {x=pos.x+neighborhood.plus.x,
+												y=pos.y+neighborhood.plus.y,
+												z=pos.z+neighborhood.plus.z}
+			end
+			--test the minus neighbor
 			local minuspos_vi = pos_vi + neighborhood_vis.minus
-			local plus, minus
-			if data[pluspos_vi]  == c_automata then plus  = 1 else --test the plus neighbor
-				empty_neighbors[pluspos_vi] = true
+			if old_indexes[minuspos_vi] then minus = 1 
+			else empty_neighbors[minuspos_vi] = {x=pos.x+neighborhood.minus.x,
+												 y=pos.y+neighborhood.minus.y,
+												 z=pos.z+neighborhood.minus.z}
 			end
-			if data[minuspos_vi] == c_automata then minus = 1 else --test the minus neighbor
-				empty_neighbors[minuspos_vi] = true
-			end
+			--apply the survival rules
 			if ( not plus and not minus and code1d[3]==1 )
 			or (     plus and not minus and code1d[4]==1 )
 			or ( not plus and     minus and code1d[7]==1 )
 			or (     plus and     minus and code1d[8]==1 ) then
-				--add to life list
-				local gpos_vi = pos_vi + growth_vi
-				
-				if rules.grow_distance ~= 0 then
-					table.insert(life_list, gpos_vi) --when node is actually set we will add to new_cell_list
-					table.insert(death_list, pos_vi) --with grow_distance ~= 0, the old pos dies leaving rules.trail
-				else
-					--in the case that this is the final iteration, we need to pass it to the life list afterall
-					if is_final == 1 then
-						table.insert(life_list, pos_vi) --when node is actually set we will add to new_cell_list
-					else
-						add_to_new_cell_list(pos) --if grow_distance==0 we just let it be but add to new_cell_list
-					end
-				end
-				
-			else
-				--death
-				table.insert(death_list, pos_vi)
+				survival = true
 			end
-			
-		else --totalistic ruleset
+		
+		--CELL SURVIVAL TESTING: totalistic ruleset (ie 2D and 3D)
+		else 
 			local same_count = 0
 			for k, vi_offset in next, neighborhood_vis do
 				
-				--add the offsets to the position @todo although this isn't bad
-				--local npos = {x=pos.x+offset.x, y=pos.y+offset.y, z=pos.z+offset.z}
+				--add the offsets to the position
 				local n_vi = pos_vi + vi_offset
 				--test for sameness
-				if data[n_vi] == c_automata then
+				if old_indexes[n_vi] then
 					same_count = same_count + 1
 				else
-					empty_neighbors[n_vi] = true
+					empty_neighbors[n_vi] = {x=pos.x+neighborhood[k].x,
+											 y=pos.y+neighborhood[k].y,
+											 z=pos.z+neighborhood[k].z}
 				end
 			end
 			--now we have a same neighbor count, apply life and death rules
-
 			if rules.survive[same_count] then
-				--add to life list
-				local gpos_vi = pos_vi + growth_vi
-				
-				if rules.grow_distance ~= 0 then
-					table.insert(life_list, gpos_vi) --when node is actually set we will add to new_cell_list
-					table.insert(death_list, pos_vi) --with grow_distance ~= 0, the old pos dies leaving rules.trail
-				else
-					--in the case that this is the final iteration, we need to pass it to the life list afterall
-					if is_final == 1 then
-						table.insert(life_list, pos_vi) --when node is actually set we will add to new_cell_list
-					else
-						add_to_new_cell_list(pos) --if grow_distance==0 we just let it be but add to new_cell_list
-					end
-				end
-				
-			else
-				--death
-				table.insert(death_list, pos_vi)
+				survival = true
 			end
+			
+		end
+		if survival then
+		--add to life list				
+			if rules.grow_distance ~= 0 then
+				local gpos_vi = new_pos_vi + growth_vi
+				local gpos = {x=pos.x+growth_offset.x, y=pos.y+growth_offset.y, z=pos.z+growth_offset.z}
+				life_list[gpos_vi] = gpos --when node is actually set we will add to new_cell_list
+				death_list[new_pos_vi] = pos --with grow_distance ~= 0, the old pos dies leaving rules.trail
+			else
+				--in the case that this is the final iteration, we need to pass it to the life list afterall
+				if is_final == 1 then
+					life_list[new_pos_vi] = pos --when node is actually set we will add to new_cell_list
+				else
+					add_to_new_cell_list(new_pos_vi, pos) --if grow_distance==0 we just let it be but add to new_cell_list
+				end
+			end
+			
+		else
+			--death
+			death_list[new_pos_vi] = pos
 		end
 	end
-	--loop through the new total neighbors list looking for births
-	for epos_vi, _ in next, empty_neighbors do
-		
-		if rules.neighbors == 2 then --non-totalistic rules
+	
+	--CELL BIRTH TESTING: tests all empty_neighbors against rules.birth or code1d[1,2,5,6]
+	for epos_vi, epos in next, empty_neighbors do
+		local birth = false
+		--CELL BIRTH TESTING: non-totalistic rules (ie. 1D)
+		if rules.neighbors == 2 then
 			local code1d = automata.toBits(rules.code1d, 8) --rules 1,2,5,6 apply to already-on cells and 1 is un-implementable
-			local pluspos_vi  = epos_vi + neighborhood_vis.plus
-			local minuspos_vi = epos_vi + neighborhood_vis.minus
 			local plus, minus
-			if data[pluspos_vi]  == c_automata then plus  = 1 end --test the plus neighbor
-			if data[minuspos_vi] == c_automata then minus = 1 end --test the minus neighbor
+			--test the plus neighbor
+			local pluspos_vi  = epos_vi + neighborhood_vis.plus
+			if old_indexes[pluspos_vi] then plus  = 1
+			end
+			--test the minus neighbor
+			local minuspos_vi = epos_vi + neighborhood_vis.minus
+			if old_indexes[minuspos_vi] then minus = 1
+			end
+			--apply the birth rules
 			if ( not plus and not minus and code1d[1]==1 ) --could skip this as we already know it has at least one neighbor
 			or (     plus and not minus and code1d[2]==1 )
 			or ( not plus and     minus and code1d[5]==1 )
 			or (     plus and     minus and code1d[6]==1 ) then
-				--add to life list
-				local bpos_vi = epos_vi + growth_vi
-				table.insert(life_list, bpos_vi) --when node is actually set we will add to new_cell_list
+				birth = true
 			end
-			
-		else --totalistic ruleset
+		--CELL BIRTH TESTING: totalistic rules (ie. 2D and 3D)
+		else
 			local same_count = 0
 			for k, vi_offset in next, neighborhood_vis do
 				--add the offsets to the position @todo although this isn't bad
@@ -418,53 +414,70 @@ function automata.grow(pattern_id)
 				--look in the cell list
 				local n_vi = epos_vi + vi_offset
 				--test for sameness
-				if data[n_vi] == c_automata then
+				if old_indexes[n_vi] == c_automata then
 					same_count = same_count + 1
 				end
 			end
 			if rules.birth[same_count] then
-				--add to life list
-				local bpos_vi = epos_vi + growth_vi
-				table.insert(life_list, bpos_vi) --when node is actually set we will add to new_cell_list
+				birth = true
 			end
+		end
+		if birth then
+			--only if birth happens convert old_index to new_index
+			local new_epos_vi = new_area:indexp(epos)
+			--add to life list
+			local bpos_vi = new_epos_vi + growth_vi
+			local bpos = {x=epos.x+growth_offset.x, y=epos.y+growth_offset.y, z=epos.z+growth_offset.z}
+			life_list[bpos_vi] = bpos --when node is actually set we will add to new_cell_list
 		end
 	end
 	--set the nodes for deaths
-	for _,dpos_vi in next, death_list do
+	for dpos_vi, dpos in next, death_list do
 		data[dpos_vi] = c_trail
 	end
 	--set the nodes for births
-	for _,bpos_vi in next, life_list do --@todo why is this processing an empty table life_list!?
+	for bpos_vi, bpos in next, life_list do --@todo why is this processing an empty table life_list!?
 		--test for destructive mode and if the node is occupied
 		if rules.destruct == "true" or data[bpos_vi] == c_air then
 			--test for final iteration
 			if is_final == 1 then
-				data[bpos_vi] = c_final
+				 data[bpos_vi] = c_final
 			else
-				data[bpos_vi] = c_automata
+				 data[bpos_vi] = c_automata
 			end
 			--add to cell_list even if final so that we can resume (feature to come)
-			add_to_new_cell_list(area:position(bpos_vi))
+			add_to_new_cell_list(bpos_vi, bpos) --this is the only place we generate a p.
 		end
 	end
-
+	
 	vm:set_data(data)
 	vm:write_to_map()
 	vm:update_map()
-
-	--update the pattern values: pmin, pmax, cell_count, cell_list, timers
-	automata.patterns[pattern_id].pmin = {x=xmin,y=ymin,z=zmin} -- is nil for finished patterns
-	automata.patterns[pattern_id].pmax = {x=xmax,y=ymax,z=zmax} -- is nil for finished patterns
-	automata.patterns[pattern_id].cell_count = #new_cell_list -- is accurate for finished patterns
-	automata.patterns[pattern_id].cell_list = new_cell_list
+	
+	--update the pattern values:
+	--pmin, pmax: the exact extent of the pattern
+	automata.patterns[pattern_id].pmin = {x=xmin,y=ymin,z=zmin}
+	automata.patterns[pattern_id].pmax = {x=xmax,y=ymax,z=zmax}
+	--cell_count is a useful metric and is used by grow_all() to pace the growth
+	automata.patterns[pattern_id].cell_count = cell_count
+	--cell_list is the table of pos_hash => pos of all cells in the pattern, will be replaced by indexes
+	--automata.patterns[pattern_id].cell_list = new_cell_list
+	--emin and emax are the emerged corners of the voxelArea for which indexes will be valid
+	automata.patterns[pattern_id].emin = new_emin
+	automata.patterns[pattern_id].emax = new_emax
+	--indexes are the cells listed in index format, will replace cell_list
+	automata.patterns[pattern_id].indexes = new_indexes
+	--profiling and growth pacing time info is recorded
 	local timer = (os.clock() - t1) * 1000
 	automata.patterns[pattern_id].last_grow = os.clock()
 	automata.patterns[pattern_id].l_timer = timer
 	automata.patterns[pattern_id].t_timer = automata.patterns[pattern_id].t_timer + timer
 	
-	if is_final == 1 or next(new_cell_list) == nil then
+	--print(string.format("pattern, "..pattern_id.." iteration #"..iteration.." elapsed time: %.2fms (cells: "..#new_cell_list.." )", timer))
+	
+	if is_final == 1 or next(new_indexes) == nil then
 	--change the status to finished -- resuming finished patterns is a coming feature
-		print ("pattern "..pattern_id.." completed at gen "..iteration.. " total proc. time: "..string.format("%.2fms", automata.patterns[pattern_id].t_timer).." final cells: "..#new_cell_list)
+		print ("pattern "..pattern_id.." completed at gen "..iteration.. " total proc. time: "..string.format("%.2fms", automata.patterns[pattern_id].t_timer).." final cells: "..cell_count)
 		minetest.chat_send_player(automata.patterns[pattern_id].creator, "pattern# "..pattern_id.." just completed at gen "..iteration)
 		
 		automata.patterns[pattern_id].status = "finished"
@@ -472,7 +485,6 @@ function automata.grow(pattern_id)
 		automata.patterns[pattern_id].status = "active" --set to growing in globalstep
 	end
 	
-	print(string.format("pattern, "..pattern_id.." iteration #"..iteration.." elapsed time: %.2fms (cells: "..#new_cell_list.." )", timer))
 	return true
 end
 
@@ -486,7 +498,7 @@ function automata.new_pattern(pname, offsets, rule_override)
 	local t1 = os.clock()
 	-- form validation
 	local rules = automata.rules_validate(pname, rule_override) --will be false if rules don't validate
-	
+	local c_automata = minetest.get_content_id("automata:active")
 	--minetest.log("action", "rules after validate: "..dump(rules))
 	
 	if rules then --in theory bad rule settings in the form should fail validation and throw a popup
@@ -539,6 +551,7 @@ function automata.new_pattern(pname, offsets, rule_override)
 		end
 		local pmin = {x=xmin,y=ymin,z=zmin}
 		local pmax = {x=xmax,y=ymax,z=zmax}
+		local new_indexes = {}
 		
 		---------------------------------------------------
 		--  VOXEL MANIP
@@ -549,7 +562,8 @@ function automata.new_pattern(pname, offsets, rule_override)
 		local data = vm:get_data()
 		for pos_hash, pos in pairs(hashed_cells) do --@todo check ownership of node? lock registry?
 			local vi = area:index(pos.x, pos.y, pos.z)
-			data[vi] = minetest.get_content_id("automata:active")
+			data[vi] = c_automata
+			new_indexes[vi] = pos
 			cell_count = cell_count + 1
 		end
 
@@ -559,7 +573,7 @@ function automata.new_pattern(pname, offsets, rule_override)
 		---------------------------------------------------
 		local timer = (os.clock() - t1) * 1000
 		--add the cell list to the active cell registry with the gens, rules hash, and cell list
-		local values = {creator=pname, status="active", iteration=0, rules=rules, cell_count=cell_count, cell_list=hashed_cells, pmin=pmin, pmax=pmax, t_timer=timer, last_grow=os.clock()}
+		local values = {creator=pname, status="active", iteration=0, rules=rules, cell_count = cell_count, cell_list=hashed_cells, pmin=pmin, pmax=pmax, emin=emin, emax=emax, t_timer=timer, indexes = new_indexes, last_grow=os.clock()}
 		automata.patterns[pattern_id] = values --overwrite placeholder
 		return true
 	else 
