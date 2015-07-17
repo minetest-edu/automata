@@ -57,6 +57,7 @@ For other known issues and planned improvements see: https://github.com/bobombol
 - major efficiency boost thanks to:
     - re-factored to use voxelManip exclusively, eliminate unnecessary calls,
     - no reading from the map, most indexes and positions calculated by arithmetic
+- ability to add more generations to a finished pattern
 
 ##New since v.0.0.6
 - fixed a bug when pausing patterns in manage tab

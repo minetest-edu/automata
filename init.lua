@@ -517,16 +517,9 @@ function automata.new_pattern(pname, offsets, rule_override)
 	end
 end
 
---[[
-METHOD: automata.rules_validate(pname, rule_override)
-RETURN: rule_id (a reference to the automata.rule_registry)
-DESC: if the rule values are valid, make an entry into the rules table and return the id
-      defaults are set to be Conway's Game of Life
-TODO: heavy development of the formspec expected
---]]
+-- called when new pattern is created
 function automata.rules_validate(pname, rule_override)
 	local rules = {}
-	 --minetest.log("action", "here :"..dump(fields))
 	--read the player settings to get the last tab and then validate the fields relevant for that tab
 	local tab = automata.get_player_setting(pname, "tab")
 	--regardless we validate the growth options common to 1D, 2D and 3D automata
@@ -676,7 +669,7 @@ end
 
 -- Processing the form from the RC
 minetest.register_on_player_receive_fields(function(player, formname, fields)
-	--minetest.log("action", "fields submitted: "..dump(fields))
+	--print("fields submitted: "..dump(fields))
 	local pname = player:get_player_name()
 	--this is the only situation where a exit ~= "" should open a form
 	if formname == "automata:popup" then
@@ -707,11 +700,22 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 			if string.sub(fields.pid_id, 1, 4) == "CHG:" and automata.patterns[pattern_id].status == "active" then
 				automata.grow_queue[pattern_id] = nil
 				automata.patterns[pattern_id].status = "paused"
-			elseif string.sub(fields.pid_id, 1, 4) == "DCL:" and automata.patterns[pattern_id].status == "paused" then
-				automata.patterns[pattern_id].status = "active"
-				automata.grow_queue[pattern_id] = { lock = false, last_grow=os.clock(), creator = pname,
-													size = automata.patterns[pattern_id].cell_count
-												  }
+			elseif string.sub(fields.pid_id, 1, 4) == "DCL:" then
+				if automata.patterns[pattern_id].status == "paused" then
+					automata.patterns[pattern_id].status = "active"
+					automata.grow_queue[pattern_id] = { lock = false, last_grow=os.clock(), creator = pname,
+														size = automata.patterns[pattern_id].cell_count }
+				elseif automata.patterns[pattern_id].status == "finished" then
+					local add_gens = tonumber(fields.add_gens)
+					if add_gens then
+						add_gens = math.floor(add_gens)
+						automata.player_settings[pname][add_gens] = add_gens
+						automata.patterns[pattern_id].rules.gens = automata.patterns[pattern_id].rules.gens + add_gens
+						automata.grow_queue[pattern_id] = { lock = false, last_grow=os.clock(), creator = pname,
+															size = automata.patterns[pattern_id].cell_count }
+					else automata.show_popup(pname, "Add gens field must be a number")
+					end
+				end
 			end
 			--update the form
 			automata.show_rc_form(pname)
@@ -971,11 +975,14 @@ function automata.show_rc_form(pname)
 		local pid_id = automata.get_player_setting(pname, "pid_id")
 		if not pid_id then pid_id = 1 end
 		local f_plist
+		local add_gens = automata.get_player_setting(pname, "add_gens")
 		if patterns == "" then f_plist = "label[1,1;no active patterns]"
+		if not add_gens then add_gens = 1 end
 		else f_plist = 	"label[1,1;Your patterns]"..
 						"textlist[1,1.5;10,8;pid_id;"..patterns..";1]"..
-						"label[1,9.5;Single Click to Pause]"..
-						"label[5,9.5;Double Click to Resume]"
+						"label[3,1;Single Click to Pause]"..
+						"label[6,1;Double Click to Resume]"..
+						"field[9.5,1;2,1;add_gens;More Gens:;"..minetest.formspec_escape(add_gens).."]"
 		end
 		minetest.show_formspec(pname, "automata:rc_form", 
 								f_header ..	f_plist
