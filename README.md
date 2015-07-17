@@ -32,24 +32,25 @@ Alternatively you can select a Game of Life pattern from the right-hand list. Do
 ## Known Issues
 - Leaving the game leaves all active and inactive automata cells in the map dormant forever. Persistence will be in a future release.
 - Large patterns (particularly 3D patterns, can cause serious lag)
+- form validation popup not working, chat message sent until this is solved
 
-## Next Steps in Development
+## Next Steps in Development (for v.0.1.0 milestone)
 -improve the form:
     - field for conversion of NKS codes to readable codes
     - buttons for presets and /or a list of previously used rules
     - way to import saved schems or use //set or //mix (worldedit isn't running on_construct)
 	- importing from a larger library of saved patterns (.rle, .cells and .lif v1.06 support) http://conwaylife.com/wiki/Main_Page
 	- an "Admin" tab visible to players with the 'automata' priv to modify default settings
-	- allow player to list the "trail" blocks to leave a more colorful trail
+	- allow player to list the "trail" blocks to leave a more colorful trail (like RAINBOW)
+	- option to start a pattern in paused mode...
 
 -new automata types:
     - rules for 2D and 3D automata which check for specific neighbor positions (non-totalistic)
     - support of Moore and von Neumann neighborhoods (diamonds) of more than 1 unit distance and 3D implementations (n-depth)
-    - an anti-cell which could be used to implement 0-neighbor birth rules within defined extent (or not)
+    - an anti-cell which could be used to implement 0-neighbor birth rules within defined extent
 
--other improvements
-    - improve efficiency, voxelManip has made 1D and 2D patterns take longer; VM not fully utilized
-    - need a way to persist/resume after quit/crash: need to save some tables to file on update, reload and reactivate at mod load, might be fixed by not saving cell list, using voxelArea extents instead...
+-persistence
+    - persistence so that patterns continue to run after exit/crash -> restart.
 
 For other known issues and planned improvements see: https://github.com/bobombolo/automata/issues
 
@@ -58,6 +59,8 @@ For other known issues and planned improvements see: https://github.com/bobombol
     - re-factored to use voxelManip exclusively, eliminate unnecessary calls,
     - no reading from the map, most indexes and positions calculated by arithmetic
 - ability to add more generations to a finished pattern
+- easter egg: enter RAINBOW as the trail field and the patter trail will be colored wool
+- inactive cells now owned per-player (but any cell can be dug by anyone)
 
 ##New since v.0.0.6
 - fixed a bug when pausing patterns in manage tab
@@ -120,9 +123,9 @@ Author: bobomb, License: WTFPL
 
 ![screenshot_2030806016](https://cloud.githubusercontent.com/assets/12679496/8044139/0b643b1e-0de8-11e5-95df-e494ee3f5cbb.png)
 
-1D Automata (uses NKS rules 0-255)
+1D Automata (uses NKS rules 0-255) (using RAINBOW mode)
 
-![screenshot_168002977](https://cloud.githubusercontent.com/assets/12679496/8142078/10ec421c-112f-11e5-9c46-6388101ee623.png)
+![screenshot_32765381](https://cloud.githubusercontent.com/assets/12679496/8739282/f94baf2a-2bf6-11e5-939b-2a45fd057fc8.png)
 
 3D Automata
 

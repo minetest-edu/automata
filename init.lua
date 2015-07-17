@@ -11,19 +11,19 @@ minetest.register_node("automata:inactive", {
 	light_source = 3,
 	groups = {oddly_breakable_by_hand=1},
 	
-	on_construct = function(pos) --@todo this is not getting called by worldedit 
-		--local n = minetest.get_node(pos)
+	after_place_node = function(pos, placer, itemstack, pointed_thing)
+		local pname  = placer:get_player_name()
 		local meta = minetest.get_meta(pos)
-		meta:set_string("infotext", "\"Inactive Automata\"")
+		meta:set_string("infotext", "\"Inactive Automata\" placed by "..pname)
 		--register the cell in the cell registry
-		automata.inactive_cells[minetest.hash_node_position(pos)] = pos
-		--minetest.log("action", "inactive: "..dump(automata.inactive_cells))
+		automata.inactive_cells[minetest.hash_node_position(pos)] = { pos = pos,
+																	  creator = pname }
 	end,
 	on_dig = function(pos)
 		--remove from the inactive cell registry
 		if automata.inactive_cells[minetest.hash_node_position(pos)] then
 			automata.inactive_cells[minetest.hash_node_position(pos)] = nil end
-		--minetest.log("action", "inactive: "..dump(automata.inactive_cells))
+		--print("inactive: "..dump(automata.inactive_cells))
 		minetest.set_node(pos, {name="air"})
 		return true
 	end,
@@ -126,10 +126,26 @@ function automata.grow(pattern_id, pname)
 	local is_final = 0
 	if iteration == rules.gens then is_final = 1 end
 	--content types to reduce lookups
-	local c_trail    = minetest.get_content_id(rules.trail)
+	local c_trail
+	local c_final
+	local rainbow = { "black","brown","dark_green","dark_grey","grey","white","pink",
+					  "red","orange","yellow","green","cyan","blue","magenta","violet"}
+	if rules.trail == "RAINBOW" then 
+		c_trail = "wool:"..rainbow[ iteration - 1 - ( #rainbow * math.floor((iteration - 1) / #rainbow) ) + 1 ]
+		c_trail = minetest.get_content_id(c_trail)
+		if rules.final == "RAINBOW" then
+			c_final = c_trail
+		else
+			c_final    = minetest.get_content_id(rules.final)
+		end
+	else
+		c_trail = minetest.get_content_id(rules.trail)
+		c_final    = minetest.get_content_id(rules.final)
+	end
 	local c_final    = minetest.get_content_id(rules.final)
 	local c_air      = minetest.get_content_id("air")
 	local c_automata = minetest.get_content_id("automata:active")
+	
 	--create a voxelManipulator instance
 	local vm = minetest.get_voxel_manip()
 	--expand the voxel extent by neighbors and growth beyond last pmin and pmax
@@ -465,7 +481,11 @@ function automata.new_pattern(pname, offsets, rule_override)
 				hashed_cells[minetest.hash_node_position(cell)] = cell
 			end
 		else
-			hashed_cells = automata.inactive_cells
+			for hash, v in next, automata.inactive_cells do
+				if v.creator == pname then
+					hashed_cells[hash] = v.pos
+				end					
+			end
 		end
 		local xmin,ymin,zmin,xmax,ymax,zmax
 		--update pmin and pmax
@@ -531,7 +551,7 @@ function automata.rules_validate(pname, rule_override)
 	--trail
 	local trail = automata.get_player_setting(pname, "trail")
 	if not trail then rules.trail = "air" 
-	elseif minetest.get_content_id(trail) ~= 127 then rules.trail = trail
+	elseif minetest.get_content_id(trail) ~= 127 or rules.trail ~= "RAINBOW" then rules.trail = trail
 	else automata.show_popup(pname, trail.." is not a valid block type") return false end
 	--final
 	local final = automata.get_player_setting(pname, "final")
