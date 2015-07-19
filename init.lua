@@ -75,10 +75,43 @@ minetest.register_craft({
 		{"automata:inactive", "automata:inactive", "automata:inactive"}
 	}
 })
+-- if WorldEdit is installed then this chat command can be used as a way to handle
+-- mass block conversions (//replace), pattern imports with WE (//save //load),
+-- random fields (//mix) and as a way to revive patterns from crashes or quitting the game.
+if worldedit then
+print("worldedit detected")
+--acts on automata:inactive cells that got lost on quit/crash or were created with WE
+minetest.register_chat_command("/own", {
+	params = "",
+	description = "load orphaned automata blocks back into your remote control",
+	privs = {worldedit=true},
+	func = function(name, param)
+		local pos1, pos2 = worldedit.pos1[name], worldedit.pos2[name]
+		--for each automata:inactive block found in the area, if it is not owned by a
+		--player in the game then it will load it into the automata.inactive table
+		local vm = minetest.get_voxel_manip()
+		local emin, emax = vm:read_from_map(pos1, pos2)
+		local area = VoxelArea:new({MinEdge=emin, MaxEdge=emax})
+		local data = vm:get_data()
+		local c_automata_active = minetest.get_content_id("automata:active")
+		local c_automata_inactive = minetest.get_content_id("automata:inactive")
+		for vi, cid in next, data do
+			if cid == c_automata_active or cid == c_automata_inactive then
+				-- check to see if the hashed position is already in the inactive list
+				
+				-- check to see if the unhashed position is in any pattern's cell list
+				
+				
+			end
+		end
+	end,
+})
+end
 -- REGISTER GLOBALSTEP
 minetest.register_globalstep(function(dtime)
 	automata.process_queue()
 end)
+
 
 --the grow_queue logic
 function automata.process_queue()
@@ -432,10 +465,12 @@ function automata.grow(pattern_id, pname)
 	automata.patterns[pattern_id] = values
 	if is_final == 1 then
 		automata.patterns[pattern_id].status = "finished"
+		minetest.chat_send_player(pname, "Your pattern, #"..pattern_id.." hit it's generation limit, "..iteration)
 		return false
 	end
 	if next(new_indexes) == nil then
 		automata.patterns[pattern_id].status = "extinct"
+		minetest.chat_send_player(pname, "Your pattern, #"..pattern_id.." grew to zero at gen "..iteration)
 		return false
 	end
 	automata.patterns[pattern_id].status = "active"
@@ -788,7 +823,6 @@ function automata.save_player_settings()
 			file:write(minetest.serialize(line).."\n")
 		end
 		file:close()
-		--minetest.log("action", "savings player settings to file")
 	end
 end
 -- load settings run at EOF at mod start
@@ -796,7 +830,6 @@ function automata.load_player_settings()
 	local file = io.open(minetest.get_worldpath().."/automata_settings", "r")
 	if file then
 		for line in file:lines() do
-			--minetest.log("action", "settings line: "..dump(line))
 			if line ~= "" then
 				local tline = minetest.deserialize(line)
 				automata.player_settings[tline.key] = tline.values
@@ -805,9 +838,54 @@ function automata.load_player_settings()
 		file:close()
 	end
 end
+--this is not used yet...
+function automata.persist_pattern(pattern_id)
+	local path = minetest.get_worldpath().."/patterns/"
+	mkdir(path)
+	local pattern_filename = path..pattern_id.."-pattern"
+	local rules_filename = path..pattern_id.."-rules"
+	local cells_filename = path..pattern_id.."-cells"
+	local file = io.open(pattern_filename, "w")
+	if file then
+		for k,v in next, automata.patterns[pattern_id] do
+			if k ~= "rules" and k ~= "indexes" then
+				local line = {key=k, values=v}
+				file:write(minetest.serialize(line).."\n")
+			end
+		end
+		file:close()
+	end
+	local file = io.open(rules_filename, "w")
+	if file then
+		for k,v in next, automata.patterns[pattern_id].rules do
+			local line = {key=k, values=v}
+			file:write(minetest.serialize(line).."\n")
+		end
+		file:close()
+	end
+	local file = io.open(cells_filename, "w")
+	if file then
+		for k,v in next, automata.patterns[pattern_id].cells do
+			local line = {key=k, values=v}
+			file:write(minetest.serialize(line).."\n")
+		end
+		file:close()
+	end	
+end
+
+function automata.export_pattern_to_mts(pattern_id)
+	local path = minetest.get_worldpath().."/schems/"
+	mkdir(path)
+	local gen = automata.patterns[pattern_id].iteration
+	local pmin = automata.patterns[pattern_id].pmin
+	local pmax = automata.patterns[pattern_id].pmax
+	local pname = automata.patterns[pattern_id].creator
+	local filename = path..pattern_id.."gen"..gen
+	minetest.create_schematic(pmin, pmax, nil, filename, nil)
+	return true
+end
 
 function automata.get_player_setting(pname, setting)
-	
 	if automata.player_settings[pname] then
 		if automata.player_settings[pname][setting] then
 			if automata.player_settings[pname][setting] ~= "" then
