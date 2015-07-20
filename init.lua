@@ -20,10 +20,8 @@ minetest.register_node("automata:inactive", {
 																	  creator = pname }
 	end,
 	on_dig = function(pos)
-		--remove from the inactive cell registry
-		if automata.inactive_cells[minetest.hash_node_position(pos)] then
-			automata.inactive_cells[minetest.hash_node_position(pos)] = nil end
-		--print("inactive: "..dump(automata.inactive_cells))
+		--delete the node and remove from the inactive cell registry
+		automata.in_inactive(pos, true)
 		minetest.set_node(pos, {name="air"})
 		return true
 	end,
@@ -36,15 +34,8 @@ minetest.register_node("automata:active", {
 	light_source = 5,
 	groups = {oddly_breakable_by_hand=1, not_in_creative_inventory=1},
 	on_dig = function(pos)
-		--get the pattern ID from the meta and remove the cell from the pattern table
-		for pattern_id,values in next, automata.patterns do
-			for pos_hash,v in next, values.cell_list do
-				if minetest.hash_node_position(pos) == pos_hash then
-					automata.patterns[pattern_id].cell_list[minetest.hash_node_position(pos)]= nil
-					--@todo update the cell count and the pmin and pmax
-				end
-			end
-		end
+		--delete the node and remove from any pattern it might belong to
+		automata.in_patterns(pos, true)
 		minetest.set_node(pos, {name="air"})
 		return true
 	end,
@@ -78,10 +69,9 @@ minetest.register_craft({
 -- if WorldEdit is installed then this chat command can be used as a way to handle
 -- mass block conversions (//replace), pattern imports with WE (//save //load),
 -- random fields (//mix) and as a way to revive patterns from crashes or quitting the game.
-if worldedit then
-print("worldedit detected")
+
 --acts on automata:inactive cells that got lost on quit/crash or were created with WE
-minetest.register_chat_command("/own", {
+minetest.register_chatcommand("/own", {
 	params = "",
 	description = "load orphaned automata blocks back into your remote control",
 	privs = {worldedit=true},
@@ -89,24 +79,96 @@ minetest.register_chat_command("/own", {
 		local pos1, pos2 = worldedit.pos1[name], worldedit.pos2[name]
 		--for each automata:inactive block found in the area, if it is not owned by a
 		--player in the game then it will load it into the automata.inactive table
-		local vm = minetest.get_voxel_manip()
-		local emin, emax = vm:read_from_map(pos1, pos2)
-		local area = VoxelArea:new({MinEdge=emin, MaxEdge=emax})
-		local data = vm:get_data()
-		local c_automata_active = minetest.get_content_id("automata:active")
-		local c_automata_inactive = minetest.get_content_id("automata:inactive")
-		for vi, cid in next, data do
-			if cid == c_automata_active or cid == c_automata_inactive then
-				-- check to see if the hashed position is already in the inactive list
-				
-				-- check to see if the unhashed position is in any pattern's cell list
-				
-				
+		if pos1 == nil or pos2 == nil then
+			minetest.chat_send_player(name, "No worldedit region selected!")
+		else
+			
+			local vm = minetest.get_voxel_manip()
+			local emin, emax = vm:read_from_map(pos1, pos2)
+			local area = VoxelArea:new({MinEdge=emin, MaxEdge=emax})
+			local data = vm:get_data()
+			local c_automata_active = minetest.get_content_id("automata:active")
+			local c_automata_inactive = minetest.get_content_id("automata:inactive")
+			local convert = false
+			local added = false
+			for i in area:iterp(pos1, pos2) do
+				local found = false
+				if data[i] == c_automata_inactive or data[i] == c_automata_active then
+					local pos = area:position(i)
+					if data[i] == c_automata_active then
+						local pid = automata.in_patterns(pos)
+						if pid then
+							if minetest.get_player_by_name(automata.patterns[pid].creator) then 
+								found = true
+							else
+								automata.in_patterns(pos, true) --delete it
+								if not convert then convert = true end
+								data[i] = c_automata_inactive
+							end
+						else
+							-- if the cell is active then convert to inactive
+							if not convert then convert = true end
+							data[i] = c_automata_inactive
+						end
+					elseif data[i] == c_automata_inactive then
+							local owner_name = automata.in_inactive(pos)
+						if owner_name then
+							if minetest.get_player_by_name(owner_name) then
+								found = true
+							else
+								automata.in_inactive(pos, true)
+							end
+						end
+					end
+					if not found then 
+						automata.inactive_cells[minetest.hash_node_position(pos)] = { pos = pos,
+																				creator = name }
+						added = true
+					end
+				end
+			end
+			if added then 
+				if convert then
+					vm:set_data(data)
+					vm:write_to_map()
+					vm:update_map()
+				end
+				minetest.chat_send_player(name, "you own new inactive automata cells")
 			end
 		end
 	end,
 })
+-- check if a position is in the pattern list, second arg deletes it
+function automata.in_patterns(pos, delete)
+	for pid, values in next, automata.patterns do
+		for vi, p in next, values.indexes do
+			if pos.x == p.x and pos.y == p.y and pos.z == p.z then
+				if delete == true then
+					automata.patterns[pid].indexes[vi] = nil
+					return pid
+				end
+			end
+		end
+	end
+	return false
 end
+-- check if a position is in the pattern list, second arg deletes it
+function automata.in_inactive(pos, delete)
+	for hash, entry in next, automata.inactive do
+		if pos.x == entry.pos.x and pos.y == entry.pos.y and pos.z == entry.pos.z then
+			if delete == true then
+				automata.inactive_cells[hash] = nil
+				return entry.creator
+			end
+		end
+	end
+	return false
+end
+-- check if a position is in the inactive list, second arg deletes it
+function automata.in_inactive(pos, delete)
+	
+end
+
 -- REGISTER GLOBALSTEP
 minetest.register_globalstep(function(dtime)
 	automata.process_queue()
