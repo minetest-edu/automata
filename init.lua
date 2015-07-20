@@ -2,8 +2,6 @@ automata = {}
 automata.patterns = {} -- master pattern list
 automata.grow_queue = {}
 automata.inactive_cells = {} -- automata:inactive nodes, activated with the remote
-
---[[the nodes]]--
 -- new cell that requires activation
 minetest.register_node("automata:inactive", {
 	description = "Programmable Automata",
@@ -69,9 +67,8 @@ minetest.register_craft({
 -- if WorldEdit is installed then this chat command can be used as a way to handle
 -- mass block conversions (//replace), pattern imports with WE (//save //load),
 -- random fields (//mix) and as a way to revive patterns from crashes or quitting the game.
-
---acts on automata:inactive cells that got lost on quit/crash or were created with WE
-minetest.register_chatcommand("/own", {
+-- acts on automata blocks that got lost on quit/crash or were created with WE
+minetest.register_chatcommand("/owncells", {
 	params = "",
 	description = "load orphaned automata blocks back into your remote control",
 	privs = {worldedit=true},
@@ -134,8 +131,12 @@ minetest.register_chatcommand("/own", {
 					vm:update_map()
 				end
 				minetest.chat_send_player(name, "you own new inactive automata cells")
+				return true
+			else
+				minetest.chat_send_player(name, "nothing to own in that region")
 			end
 		end
+		return false
 	end,
 })
 -- check if a position is in the pattern list, second arg deletes it
@@ -168,13 +169,10 @@ end
 function automata.in_inactive(pos, delete)
 	
 end
-
 -- REGISTER GLOBALSTEP
 minetest.register_globalstep(function(dtime)
 	automata.process_queue()
 end)
-
-
 --the grow_queue logic
 function automata.process_queue()
 	for pattern_id, v in next, automata.grow_queue do
@@ -204,7 +202,6 @@ function automata.process_queue()
 		end
 	end
 end
-
 -- looks at each pattern, applies the rules to generate a death list, birth list then
 -- then sets the nodes and updates the pattern table settings and indexes (cell list)
 function automata.grow(pattern_id, pname)
@@ -240,7 +237,6 @@ function automata.grow(pattern_id, pname)
 	local c_final    = minetest.get_content_id(rules.final)
 	local c_air      = minetest.get_content_id("air")
 	local c_automata = minetest.get_content_id("automata:active")
-	
 	--create a voxelManipulator instance
 	local vm = minetest.get_voxel_manip()
 	--expand the voxel extent by neighbors and growth beyond last pmin and pmax
@@ -538,13 +534,7 @@ function automata.grow(pattern_id, pname)
 	automata.patterns[pattern_id].status = "active"
 	return cell_count
 end
-
---[[
-METHOD: automata.new_pattern(pname, offset_list)
-RETURN: true/false
-DESC: calls rules_validate() can activate inactive_cells or initialize from a list
-TODO: heavy development of the formspec expected
---]]
+-- create a new pattern either from single cell or import offsets, or from inactive_cells
 function automata.new_pattern(pname, offsets, rule_override)
 	local t1 = os.clock()
 	-- form validation
@@ -633,7 +623,6 @@ function automata.new_pattern(pname, offsets, rule_override)
 		return false 
 	end
 end
-
 -- called when new pattern is created
 function automata.rules_validate(pname, rule_override)
 	local rules = {}
@@ -751,7 +740,6 @@ function automata.rules_validate(pname, rule_override)
 	--minetest.log("action","rules: "..dump(rules))
 	return rules
 end
-
 -- function to convert integer to bigendian binary string needed frequently to convert from NKS codes to usefulness
 -- modified from http://stackoverflow.com/a/26702880/3765399
 function automata.toBits(num, bits)
@@ -764,7 +752,6 @@ function automata.toBits(num, bits)
     end
     return t
 end
-
 --explode function modified from http://stackoverflow.com/a/29497100/3765399 for converting code3d inputs to tables
 -- with delimiter set to ", " this will discard all non-numbers, and accept commas and/or spaces as delimiters
 -- with no delimiter set, the entire string is exploded character by character
@@ -777,13 +764,11 @@ function automata.explode(source, delimiters)
 			temp = temp .. " "..string.sub(source, i, i)
 		end
 		source = temp.." " --extra space to avoid nil
-		--print("temp before actual explode: "..source)
 	end
 	local pattern = '([^'..delimiters..']+)'
 	string.gsub(source, pattern, function(value) if tonumber(value) then elements[tonumber(value)] = true; end  end);
 	return elements
 end
-
 -- Processing the form from the RC
 minetest.register_on_player_receive_fields(function(player, formname, fields)
 	--print("fields submitted: "..dump(fields))
@@ -854,13 +839,11 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 		end
 	end
 end)
-
 --the formspecs and related settings and functions / selected field variables
 automata.player_settings = {} --per player form persistence
 automata.open_tab5 = {} --who has tab 5 (Manage) open at any moment
 automata.lifs = {} --indexed table of lif names
 automata.lifnames = "" --string of all lif file names
-
 --this is run at load time (see EOF)
 function automata.load_lifs()
 	local lifsfile = io.open(minetest.get_modpath("automata").."/lifs/_list.txt", "r")
@@ -876,7 +859,7 @@ function automata.load_lifs()
 		automata.lifnames = automata.lifnames .. v .. ","
 	end
 end
-
+--called at each form submission
 function automata.save_player_settings()
 	local file = io.open(minetest.get_worldpath().."/automata_settings", "w")
 	if file then
@@ -900,53 +883,7 @@ function automata.load_player_settings()
 		file:close()
 	end
 end
---this is not used yet...
-function automata.persist_pattern(pattern_id)
-	local path = minetest.get_worldpath().."/patterns/"
-	mkdir(path)
-	local pattern_filename = path..pattern_id.."-pattern"
-	local rules_filename = path..pattern_id.."-rules"
-	local cells_filename = path..pattern_id.."-cells"
-	local file = io.open(pattern_filename, "w")
-	if file then
-		for k,v in next, automata.patterns[pattern_id] do
-			if k ~= "rules" and k ~= "indexes" then
-				local line = {key=k, values=v}
-				file:write(minetest.serialize(line).."\n")
-			end
-		end
-		file:close()
-	end
-	local file = io.open(rules_filename, "w")
-	if file then
-		for k,v in next, automata.patterns[pattern_id].rules do
-			local line = {key=k, values=v}
-			file:write(minetest.serialize(line).."\n")
-		end
-		file:close()
-	end
-	local file = io.open(cells_filename, "w")
-	if file then
-		for k,v in next, automata.patterns[pattern_id].cells do
-			local line = {key=k, values=v}
-			file:write(minetest.serialize(line).."\n")
-		end
-		file:close()
-	end	
-end
-
-function automata.export_pattern_to_mts(pattern_id)
-	local path = minetest.get_worldpath().."/schems/"
-	mkdir(path)
-	local gen = automata.patterns[pattern_id].iteration
-	local pmin = automata.patterns[pattern_id].pmin
-	local pmax = automata.patterns[pattern_id].pmax
-	local pname = automata.patterns[pattern_id].creator
-	local filename = path..pattern_id.."gen"..gen
-	minetest.create_schematic(pmin, pmax, nil, filename, nil)
-	return true
-end
-
+--retrieve individual form field
 function automata.get_player_setting(pname, setting)
 	if automata.player_settings[pname] then
 		if automata.player_settings[pname][setting] then
@@ -962,7 +899,7 @@ function automata.get_player_setting(pname, setting)
 		return false
 	end
 end
-
+-- show the main remote control form
 function automata.show_rc_form(pname)
 	local player = minetest.get_player_by_name(pname)
 	local ppos = player:getpos()
@@ -1136,8 +1073,8 @@ function automata.show_rc_form(pname)
 		if not pid_id then pid_id = 1 end
 		local f_plist
 		local add_gens = automata.get_player_setting(pname, "add_gens")
-		if patterns == "" then f_plist = "label[1,1;no active patterns]"
 		if not add_gens then add_gens = 1 end
+		if patterns == "" then f_plist = "label[1,1;no active patterns]"
 		else f_plist = 	"label[1,1;Your patterns]"..
 						"textlist[1,1.5;10,8;pid_id;"..patterns..";1]"..
 						"label[3,1;Single Click to Pause]"..

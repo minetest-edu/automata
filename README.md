@@ -1,11 +1,14 @@
-# automata v.0.0.8
+# automata v.0.0.9
 ### A minetest mod for growing various cellular automata, including conway's game of life...
 
 ## Installation
 like any minetest mod just install the mod as "automata" in your mods folder
 
-## What it Does
-### 2 Node types, 1 Tool
+## What it Adds
+### 2 Node types, 1 Tool, 1 Chat command
+
+## Depends on
+### Nothing, optionally depends on WorldEdit in order to use chat command "//owncells
 
 This mod provides a "Programmable" Cellular Automata block (Inactive Cell) which you place, then you select the Remote Control tool and punch it to bring up the activation form. Once activated, Inactive Cells become Active Cells and start growing according to the rules you've set. Active Cells turn into Inactive Cells when dug. 
 
@@ -28,6 +31,9 @@ When you hit "Single" a single cell will be placed at your current location and 
 
 ### Mode 3, importing a Game of Life entity from the supplied .LIF collection 
 Alternatively you can select a Game of Life pattern from the right-hand list. Double clicking will give a description. Some of these patterns are extremely large and are actually more like huge machines made of smaller patterns set in precise relation to eachother. Clicking "Import" will create the selected pattern, with the selected rules, relative to your current location. (Most of these patterns are intended for standard Conway 23/3 rules but some are intended for variations on these rules. If that is the case the alternate rules, or any you have entered, will be used -- .LIF collection by Al Hensel http://www.ibiblio.org/lifepatterns/lifebc.zip )
+
+### Mode 4, using WorldEdit to set up patterns, import patterns, set up random field, etc.
+If worldedit is installed, this mod adds a chat command, "//owncells" which allows capturing abandoned automata blocks (active or inactive, abandoned by player or game quit/crash) as well as capturing blocks created by worldedit (which until now have not been useful). This means that by marking a worldedit region, using "//replace stone automata:inactive" or "//mix air automata:inactive", etc, following up with "//owncells" will add these blocks to your "inactive blocks" so that you can activate them with the remote control. You can also mark a reqion around an aborted set of active blocks, or inactive blocks, and as long as they are not owned by a player still in the game (which they won't be if the game was quit and restarted) they also will be added to your inactive blocks to be activated by remote. (note: digging individual blocks does not respect ownership in any way, and manually digging an active block will remove it from whatever pattern it is part of as long as the pattern isn't already past that block in a current grow cycle, as will an inactive block that is dug be removed from any other player's inactive blocks.)
 
 ## Known Issues
 - Leaving the game leaves all active and inactive automata cells in the map dormant forever. Persistence will be in a future release.
@@ -53,6 +59,10 @@ Alternatively you can select a Game of Life pattern from the right-hand list. Do
     - persistence so that patterns continue to run after exit/crash -> restart.
 
 For other known issues and planned improvements see: https://github.com/bobombolo/automata/issues
+##New since v.0.0.8
+- added chat command "//owncells" for activating automata blocks created by worldedit or reactivating cells orphaned by quit/crash (addresses import/export, persistence, cleanup of orphaned cells)
+- fixed bug in manage tab form
+- fixed bug in digging automata blocks
 
 ##New since v.0.0.7
 - major efficiency boost thanks to:
