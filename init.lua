@@ -79,7 +79,8 @@ minetest.register_chatcommand("/owncells", {
 		if pos1 == nil or pos2 == nil then
 			minetest.chat_send_player(name, "No worldedit region selected!")
 		else
-			
+			--identify the pmin and pmax from pos1 and pos2
+			pos1, pos2 = worldedit.sort_pos(pos1, pos2)
 			local vm = minetest.get_voxel_manip()
 			local emin, emax = vm:read_from_map(pos1, pos2)
 			local area = VoxelArea:new({MinEdge=emin, MaxEdge=emax})
