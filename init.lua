@@ -548,7 +548,7 @@ function automata.new_pattern(pname, offsets, rule_override)
 		local pos = {}
 		local hashed_cells = {}
 		local cell_count=0
-		--are we being supplied with a list of offsets?
+		--are we being supplied with a list of offsets? (single or import lif)
 		if offsets then
 			local player = minetest.get_player_by_name(pname)
 			local ppos = player:getpos()
@@ -600,16 +600,22 @@ function automata.new_pattern(pname, offsets, rule_override)
 		local emin, emax = vm:read_from_map(pmin, pmax)
 		local area = VoxelArea:new({MinEdge=emin, MaxEdge=emax})
 		local data = vm:get_data()
-		for pos_hash, pos in next, hashed_cells do --@todo check ownership of node? lock registry?
-			local vi = area:index(pos.x, pos.y, pos.z)
+		local single_pos
+		for pos_hash, pos in next, hashed_cells do
+			single_pos = pos
+			local vi = area:indexp(pos)
 			data[vi] = c_automata
 			new_indexes[vi] = pos
 			cell_count = cell_count + 1
 		end
-		vm:set_data(data)
-		vm:write_to_map()
-		vm:update_map()
-		---------------------------------------------------
+		--for some bizzare reason a single cell isn't getting set by VM so using set_node(), issue #59
+		if cell_count == 1 then
+			minetest.set_node(single_pos, {name="automata:active"})
+		else
+			vm:set_data(data)
+			vm:write_to_map()
+			vm:update_map()
+		end
 		local timer = (os.clock() - t1) * 1000
 		--add the cell list to the active cell registry with the gens, rules hash, and cell list
 		local values = { creator=pname, status="active", iteration=0, rules=rules, 
