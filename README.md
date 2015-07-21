@@ -36,18 +36,14 @@ Alternatively you can select a Game of Life pattern from the right-hand list. Do
 If worldedit is installed, this mod adds a chat command, "//owncells" which allows capturing abandoned automata blocks (active or inactive, abandoned by player or game quit/crash) as well as capturing blocks created by worldedit (which until now have not been useful). This means that by marking a worldedit region, using "//replace stone automata:inactive" or "//mix air automata:inactive", etc, following up with "//owncells" will add these blocks to your "inactive blocks" so that you can activate them with the remote control. You can also mark a reqion around an aborted set of active blocks, or inactive blocks, and as long as they are not owned by a player still in the game (which they won't be if the game was quit and restarted) they also will be added to your inactive blocks to be activated by remote. (note: digging individual blocks does not respect ownership in any way, and manually digging an active block will remove it from whatever pattern it is part of as long as the pattern isn't already past that block in a current grow cycle, as will an inactive block that is dug be removed from any other player's inactive blocks.)
 
 ## Known Issues
-- Leaving the game leaves all active and inactive automata cells in the map dormant forever. Persistence will be in a future release.
 - Large patterns (particularly 3D patterns, can cause serious lag)
-- form validation popup not working, chat message sent until this is solved
 
 ## Next Steps in Development (for v.0.1.0 milestone)
 -improve the form:
-    - field for conversion of NKS codes to readable codes
+    
     - buttons for presets and /or a list of previously used rules
-    - way to import saved schems or use //set or //mix (worldedit isn't running on_construct)
 	- importing from a larger library of saved patterns (.rle, .cells and .lif v1.06 support) http://conwaylife.com/wiki/Main_Page
 	- an "Admin" tab visible to players with the 'automata' priv to modify default settings
-	- allow player to list the "trail" blocks to leave a more colorful trail (like RAINBOW)
 	- option to start a pattern in paused mode...
 
 -new automata types:
@@ -55,21 +51,20 @@ If worldedit is installed, this mod adds a chat command, "//owncells" which allo
     - support of Moore and von Neumann neighborhoods (diamonds) of more than 1 unit distance and 3D implementations (n-depth)
     - an anti-cell which could be used to implement 0-neighbor birth rules within defined extent
 
--persistence
-    - persistence so that patterns continue to run after exit/crash -> restart.
-
 For other known issues and planned improvements see: https://github.com/bobombolo/automata/issues
 ##New since v.0.0.8
 - added chat command "//owncells" for activating automata blocks created by worldedit or reactivating cells orphaned by quit/crash (addresses import/export, persistence, cleanup of orphaned cells)
 - fixed bug in manage tab form
 - fixed bug in digging automata blocks
+- field for conversion of NKS codes to readable codes for 1D and 2D patterns
+- fixed bug preventing popup forms from showing (need better solution see issue #30)
 
 ##New since v.0.0.7
 - major efficiency boost thanks to:
     - re-factored to use voxelManip exclusively, eliminate unnecessary calls,
     - no reading from the map, most indexes and positions calculated by arithmetic
 - ability to add more generations to a finished pattern
-- easter egg: enter RAINBOW as the trail field and the patter trail will be colored wool
+- easter egg: enter RAINBOW as the trail field and the pattern trail will be colored wool
 - inactive cells now owned per-player (but any cell can be dug by anyone)
 
 ##New since v.0.0.6

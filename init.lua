@@ -682,17 +682,7 @@ function automata.rules_validate(pname, rule_override)
 			--code2d (must be in the format survive/birth, ie, 23/3)
 			local code2d = automata.get_player_setting(pname, "code2d")
 			if not code2d then code2d = "23/3" end
-			local split
-			split = string.find(code2d, "/")
-			if split then
-				-- take the values to the left and the values to the right
-				rules.survive = string.sub(code2d, 1, split-1)
-				rules.survive = automata.explode(rules.survive)
-				rules.birth = string.sub(code2d, split+1)
-				rules.birth = automata.explode(rules.birth)
-			else
-				automata.show_popup(pname, "the rule code should be in the format \"23/3\"-- you said: "..code2d) return false
-			end
+			rules.survive, rules.birth = automata.code2d_to_sb_and_nks(code2d)
 		elseif tab == "4" then
 			--assume neighbors = 8, LIF files assume this and default to conway rules but may override with #R
 			rules.neighbors = 8
@@ -766,9 +756,38 @@ function automata.explode(source, delimiters)
 	string.gsub(source, pattern, function(value) if tonumber(value) then elements[tonumber(value)] = true; end  end);
 	return elements
 end
+
+-- validate and convert the survival / birth rules to NKS code
+function automata.code2d_to_sb_and_nks(code2d)
+	local survival, birth
+	local nks = 0
+	local split = string.find(code2d, "/")
+	if split then
+		-- take the values to the left and the values to the right
+		survival = string.sub(code2d, 1, split-1)
+		birth = string.sub(code2d, split+1)
+	else
+		--assume all rules are survival if no split
+		survival = code2d
+		birth = ""
+	end
+	survival = automata.explode(survival)
+	birth = automata.explode(birth)
+	for i = 0, 8, 1 do
+		--odd (birth)
+		if birth[i] then --when i=0, power is 0, when i=1 power is 2, i=2 p=4
+			nks = nks + ( 2 ^ (i*2) )
+		end
+		--even (survival)
+		if survival[i] then --when i=0 power is 1, when i=1 power is 3, 1=2 p=5
+			nks = nks + ( 2 ^ (2*i+1) )
+		end
+	end
+	return survival, birth, nks
+end
 -- Processing the form from the RC
 minetest.register_on_player_receive_fields(function(player, formname, fields)
-	--print("fields submitted: "..dump(fields))
+	print("fields submitted: "..dump(fields))
 	local pname = player:get_player_name()
 	-- recover the old tab to detect tab change later
 	local old_tab = automata.get_player_setting(pname, "tab")
@@ -1065,12 +1084,13 @@ function automata.show_rc_form(pname)
 			--code2d
 			local code2d = automata.get_player_setting(pname, "code2d")
 			if not code2d then code2d = "" end
-			
+			local s, b, nks = automata.code2d_to_sb_and_nks(code2d)
 			local f_n2d = 				"label[1,0.5;Neighbors]"..
 										"dropdown[3,0.5;1,1;n2d;4,8;"..n2d_id.."]"
 			local f_code2d = 			"field[6,1;6,1;code2d;Rules (eg: 23/3);"..
 												minetest.formspec_escape(code2d).."]"..
-										"button_exit[6,2;2,1;exit;NKS Code]"
+										"button_exit[6,2;2,1;exit;NKS Code]"..
+										"label[8,2.2;Currently NKS code "..nks.."]"
 			minetest.show_formspec(pname, "automata:rc_form", 
 								f_header ..
 								f_grow_settings ..
@@ -1201,33 +1221,11 @@ end
 function automata.nks_code2d_popup(pname)
 	local code2d = automata.get_player_setting(pname, "code2d")
 	local nks = 0
-	local survive, birth
 	if not code2d then 
-		code2d = "" 
+		code2d = ""
 	else
-		-- validate and convert the survival / birth rules to NKS code
-		local split
-		split = string.find(code2d, "/")
-		if split then
-			-- take the values to the left and the values to the right
-			survive = string.sub(code2d, 1, split-1)
-			survive = automata.explode(survive)
-			birth = string.sub(code2d, split+1)
-			birth = automata.explode(birth)
-			for i = 1, 18, 1 do
-				if i % 2 == 0 then
-					--even (survival)
-					if survive[i/2-1] then
-						nks = nks + ( 2 ^ (i - 1) )
-					end
-				else
-					--odd (birth)
-					if birth[i-1] then
-						nks = nks + ( 2 ^ (i - 1) )
-					end
-				end
-			end
-		end
+		local survival, birth
+		survival, birth, nks = automata.code2d_to_sb_and_nks(code2d)
 	end
 	minetest.show_formspec(pname, 	"automata:nks2d",
 									"size[10,4]" ..
