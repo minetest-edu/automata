@@ -39,17 +39,9 @@ If worldedit is installed, this mod adds a chat command, "//owncells" which allo
 - Large patterns (particularly 3D patterns, can cause serious lag)
 
 ## Next Steps in Development (for v.0.1.0 milestone)
--improve the form:
-    
-    - buttons for presets and /or a list of previously used rules
-	- importing from a larger library of saved patterns (.rle, .cells and .lif v1.06 support) http://conwaylife.com/wiki/Main_Page
-	- an "Admin" tab visible to players with the 'automata' priv to modify default settings
-	- option to start a pattern in paused mode...
-
--new automata types:
-    - rules for 2D and 3D automata which check for specific neighbor positions (non-totalistic)
-    - support of Moore and von Neumann neighborhoods (diamonds) of more than 1 unit distance and 3D implementations (n-depth)
-    - an anti-cell which could be used to implement 0-neighbor birth rules within defined extent
+- importing from a larger library of saved patterns (.rle, .cells and .lif v1.06 support) http://conwaylife.com/wiki/Main_Page and showing a summary in the form
+- an "Admin" tab visible to players with the 'automata' priv to modify default settings
+- an anti-cell which could be used to implement 0-neighbor birth rules within defined extent
 
 For other known issues and planned improvements see: https://github.com/bobombolo/automata/issues
 ##New since v.0.0.8
