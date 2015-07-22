@@ -865,6 +865,10 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 			automata.show_rc_form(pname)
 			return true
 		end	
+		--if a lif was clicked show the popup form summary
+		if fields.lif_id then
+			automata.show_lif_summary(pname)
+		end
 		--if the pid_id click or double-click field is submitted, we pause or unpause the pattern
 		if fields.pid_id then
 			--translate the pid_id back to a pattern_id
@@ -1242,6 +1246,45 @@ function automata.nks_code2d_popup(pname)
 	)
 	return true
 end
+-- show a popup form of the lif file summary
+function automata.show_lif_summary(pname)
+	local lif_id = automata.get_player_setting(pname, "lif_id")
+	if lif_id then lif_id = tonumber(string.sub(lif_id, 5)) else return false end
+	local liffile = io.open(minetest.get_modpath("automata").."/lifs/"..automata.lifs[lif_id]..".LIF", "r")
+	local message = ""
+	local count = 0
+	local byte_char = string.byte("*")
+	if liffile then
+		for line in liffile:lines() do
+			--minetest.log("action", "line: "..line)
+			if string.sub(line, 1,2) == "#D" then
+				message = message .. string.sub(line, 4).."\n"
+			end
+			if string.sub(line, 1,2) == "#N" then
+				message = message .. "Standard Rules: 23/3 \n"
+			end
+			if string.sub(line, 1,2) == "#R" then
+				message = message .. "Non-standard Rules: " .. string.sub(line, 4).."\n"
+			end
+			if string.sub(line, 1,1) ~= "#" then
+				-- count all the cells
+				for i = 1, #line do
+					if string.byte(line, i) == byte_char then
+						count = count + 1 
+					end 
+				end 
+			end
+		end
+		if count then
+			message = message .. "This pattern has " .. count .. "cells in it."
+		end
+	end
+	minetest.show_formspec(pname, "automata:popup",
+								"size[10,8]" ..
+								"button_exit[1,1;2,1;exit;Back]"..
+								"label[1,3;"..minetest.formspec_escape(message).."]"
+	)
+end
 -- this is the form-error popup
 function automata.show_popup(pname, message)
 	minetest.chat_send_player(pname, "Form error: "..message)
@@ -1272,12 +1315,10 @@ function automata.import_lif(pname)
 			--minetest.log("action", "line: "..line)
 			if string.sub(line, 1,2) == "#R" then
 				rule_override = string.sub(line, 4)
-				--@todo: further clean up this string? is it in the same format as our rules.code?
 			end
 			if string.sub(line, 1,2) == "#P" then
 				local split = string.find(string.sub(line, 4), " ")
 				origin = {e = tonumber(string.sub(line, 4, 3+split)), n = tonumber(string.sub(line, split+4))}
-				--minetest.log("action", "temp_origin: "..dump(origin))
 			end
 			--an origin must be set for any lines to be processed otherwise lif file corrupt
 			if string.sub(line, 1,1) == "." or string.sub(line, 1,1) == "*" then
