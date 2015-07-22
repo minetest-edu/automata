@@ -44,12 +44,14 @@ If worldedit is installed, this mod adds a chat command, "//owncells" which allo
 - an anti-cell which could be used to implement 0-neighbor birth rules within defined extent
 
 For other known issues and planned improvements see: https://github.com/bobombolo/automata/issues
+
 ##New since v.0.0.8
 - added chat command "//owncells" for activating automata blocks created by worldedit or reactivating cells orphaned by quit/crash (addresses import/export, persistence, cleanup of orphaned cells)
 - fixed bug in manage tab form
 - fixed bug in digging automata blocks
 - field for conversion of NKS codes to readable codes for 1D and 2D patterns
 - fixed bug preventing popup forms from showing (need better solution see issue #30)
+- clicking on a LIF in the import tab shows a summary of the pattern
 
 ##New since v.0.0.7
 - major efficiency boost thanks to:
