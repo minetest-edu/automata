@@ -186,8 +186,10 @@ function automata.process_queue()
 	--print(dump(automata.patterns[pattern_id]))
 		if automata.grow_queue[pattern_id].lock == false --pattern is not paused or finished
 		and minetest.get_player_by_name(v.creator) --player in game
-		and (os.clock() - automata.grow_queue[pattern_id].last_grow) 
-			>= math.log(automata.grow_queue[pattern_id].size)
+		and ( (os.clock() - automata.grow_queue[pattern_id].last_grow) 
+			>= automata.grow_queue[pattern_id].size / 100
+		or (os.clock() - automata.grow_queue[pattern_id].last_grow) 
+			>= math.log(automata.grow_queue[pattern_id].size) )
 		then
 			--lock pattern and do the grow()
 			automata.grow_queue[pattern_id].lock = true
@@ -247,7 +249,8 @@ function automata.grow(pattern_id, pname)
 	local vm = minetest.get_voxel_manip()
 	--expand the voxel extent by neighbors and growth beyond last pmin and pmax
 	local e 
-	if rules.neighbors > 8 or rules.grow_distance == "" or rules.grow_distance == 0 then 
+	if not rules.grow_distance or rules.grow_distance == "" or rules.grow_distance == 0 
+	or rules.neighbors == 6  or rules.neighbors == 18 or rules.neighbors == 26 then 
 		e = 1
 		rules.grow_distance = 0
 	else e = math.abs(rules.grow_distance) end
@@ -1161,9 +1164,12 @@ function automata.show_rc_form(pname)
 		for k,v in next, automata.patterns do
 			if v.creator == pname then
 				i = i+1
-				patterns = 	patterns..","..minetest.formspec_escape("pattern: "..k
-							.." status: "..v.status.." at gen: "..v.iteration.." size: "
-							..v.cell_count.." cells, time: "..math.ceil(v.t_timer).."ms" )
+				local pmin = v.pmin
+				local pmax = v.pmax				
+				patterns = 	patterns..","..minetest.formspec_escape(k
+							.." ["..v.status.."] gen:"..v.iteration.." cells:"
+							..v.cell_count.." time:"..math.ceil(v.t_timer).."ms min:"
+							..pmin.x.."."..pmin.y.."."..pmin.z.." max:"..pmax.x.."."..pmax.y.."."..pmax.z)
 				automata.open_tab5[pname][i]=k --need this table to decode the form's pid_ids back to pattern_ids
 			end
 		end
@@ -1268,7 +1274,7 @@ function automata.show_lif_summary(pname)
 		for line in liffile:lines() do
 			--minetest.log("action", "line: "..line)
 			if string.sub(line, 1,2) == "#D" then
-				if i == 1 then title = string.sub(line, 4).."\n" else
+				if i == 1 then title = string.sub(line, 4) else
 				desc = desc .. string.sub(line, 4).."\n"
 				end
 				i = i+1
@@ -1289,7 +1295,7 @@ function automata.show_lif_summary(pname)
 			end
 		end
 		if count then
-			message = title .. "This pattern has " .. count .. ". " .. ruleset .. desc
+			message = title.."\nThis pattern has "..count.." cells. "..ruleset.."\n"..desc
 		end
 	end
 	minetest.show_formspec(pname, "automata:popup",
