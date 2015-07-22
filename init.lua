@@ -273,7 +273,7 @@ function automata.grow(pattern_id, pname)
 	local zero_ns = {}
 	local old_area
 	-- if zero neighbor birth rule set then build up the zero neighbor list
-	if ( rules.neighbors > 2 and rules.birth[0] ) or ( code1d and code1d[1] ) then 
+	if ( rules.neighbors > 2 and rules.birth[0] ) or ( code1d and code1d[1] == 1) then 
 		zeroNbirth = true
 		old_area = VoxelArea:new({MinEdge=old_emin, MaxEdge=old_emax})
 		for i in old_area:iterp(old_pmin, old_pmax) do
@@ -500,8 +500,7 @@ function automata.grow(pattern_id, pname)
 			if old_indexes[minuspos_vi] then minus = 1
 			end
 			--apply the birth rules
-			if ( not plus and not minus and code1d[1]==1 ) --this is a given
-			or (     plus and not minus and code1d[2]==1 )
+			if (     plus and not minus and code1d[2]==1 )
 			or ( not plus and     minus and code1d[5]==1 )
 			or (     plus and     minus and code1d[6]==1 ) then
 				birth = true
@@ -577,8 +576,7 @@ function automata.new_pattern(pname, offsets, rule_override)
 	-- form validation
 	local rules = automata.rules_validate(pname, rule_override) --will be false if rules don't validate
 	local c_automata = minetest.get_content_id("automata:active")
-	--minetest.log("action", "rules after validate: "..dump(rules))
-	if rules then --in theory bad rule settings in the form should fail validation and throw a popup
+	if rules then
 		--create the new pattern id empty
 		table.insert(automata.patterns, true) --placeholder to get id
 		local pattern_id = #automata.patterns
@@ -630,9 +628,6 @@ function automata.new_pattern(pname, offsets, rule_override)
 		local pmin = {x=xmin,y=ymin,z=zmin}
 		local pmax = {x=xmax,y=ymax,z=zmax}
 		local new_indexes = {}
-		---------------------------------------------------
-		--  VOXEL MANIP
-		---------------------------------------------------
 		local vm = minetest.get_voxel_manip()
 		local emin, emax = vm:read_from_map(pmin, pmax)
 		local area = VoxelArea:new({MinEdge=emin, MaxEdge=emax})
@@ -711,67 +706,36 @@ function automata.rules_validate(pname, rule_override)
 			elseif tonumber(code1d) >= 0 and tonumber(code1d) <= 255 then rules.code1d = tonumber(code1d)
 			else automata.show_popup(pname, "the 1D rule should be between 0 and 255-- you said: "..code1d) return false end
 			--axis (this is the calculation axis and must not be the same as the grow_axis, only matters if tab=1)
-			local axis = automata.get_player_setting(pname, "axis")
-			if not axis then rules.axis = "x"  --with the dropdown on the form this default should never be used
-			else rules.axis = axis end
-			if axis == grow_axis then
+			rules.axis = automata.get_player_setting(pname, "axis")
+			if rules.axis == grow_axis then
 				automata.show_popup(pname, "the grow axis and main axis cannot be the same") --not working most of time
 				return false 
 			end
 		elseif tab == "2" then--fields specific to 2D
 			--n2d
 			local n2d = automata.get_player_setting(pname, "n2d")
-			if not n2d then rules.neighbors = 8 --with the dropdown on the form this default should never be used
-			else rules.neighbors = tonumber(n2d) end
-			--code2d (must be in the format survive/birth, ie, 23/3)
+			rules.neighbors = tonumber(n2d)
 			local code2d = automata.get_player_setting(pname, "code2d")
 			if not code2d then code2d = "23/3" end
 			rules.survive, rules.birth = automata.code2d_to_sb_and_nks(code2d)
 		elseif tab == "4" then
-			--assume neighbors = 8, LIF files assume this and default to conway rules but may override with #R
 			rules.neighbors = 8
 			--process the rule override if passed in to rules_validate() as "rule_override"
 			if not rule_override then rule_override = "23/3" end
-			local split
-			split = string.find(rule_override, "/")
-			if split then
-				-- take the values to the left and the values to the right
-				rules.survive = string.sub(rule_override, 1, split-1)
-				rules.survive = automata.explode(rules.survive)
-				rules.birth = string.sub(rule_override, split+1)
-				rules.birth = automata.explode(rules.birth)
-				--print("2D LIF rules "..dump(rules.survive) .."/"..dump(rules.birth))
-			else
-				minetest.log(error, "something was wrong with #R line in the .lif file"..automata.lifs[lif_id]..".LIF") return false
-			end
+			rules.survive, rules.birth = automata.code2d_to_sb_and_nks(rule_override)
 		end
 	elseif tab == "3" then --fields specific to 3D
 		--n3d
 		local n3d = automata.get_player_setting(pname, "n3d")
-		if not n3d then rules.neighbors = 26 --with the dropdown on the form this default should never be used
-		else rules.neighbors = tonumber(n3d) end
-		--code3d (must be in the format survive/birth, ie, 23/3)
+		rules.neighbors = tonumber(n3d)
 		local code3d = automata.get_player_setting(pname, "code3d")
 		if not code3d then code3d = "2,3/3" end 
-		local split
-		split = string.find(code3d, "/")
-		if split then
-			-- take the values to the left and the values to the right
-			rules.survive = string.sub(code3d, 1, split-1)
-			rules.survive = automata.explode(rules.survive, " ,")
-			rules.birth = string.sub(code3d, split+1)
-			rules.birth = automata.explode(rules.birth, " ,")
-			--print("3D rules "..dump(rules.survive) .."/"..dump(rules.birth))
-			--@TODO reassemble the rules in a garbage-free format and re-enter it to player_settings[pname].code3d
-		else
-			automata.show_popup(pname, "the rule code should be in the format \"2,3,18/3,14\"-- you said: "..code3d)
-			return false
-		end
+		rules.survive, rules.birth = automata.code2d_to_sb_and_nks(code3d)
 	end
-	--minetest.log("action","rules: "..dump(rules))
 	return rules
 end
--- function to convert integer to bigendian binary string needed frequently to convert from NKS codes to usefulness
+-- function to convert integer to bigendian binary string needed frequently
+-- to convert from NKS codes to usefulness
 -- modified from http://stackoverflow.com/a/26702880/3765399
 function automata.toBits(num, bits)
     -- returns a table of bits, most significant first.
@@ -783,8 +747,10 @@ function automata.toBits(num, bits)
     end
     return t
 end
--- explode function modified from http://stackoverflow.com/a/29497100/3765399 for converting code3d inputs to tables
--- with delimiter set to ", " this will discard all non-numbers, and accept commas and/or spaces as delimiters
+-- explode function modified from http://stackoverflow.com/a/29497100/3765399
+-- for converting code3d inputs to tables
+-- with delimiter set to ", " this will discard all non-numbers,
+-- and accept commas and/or spaces as delimiters
 -- with no delimiter set, the entire string is exploded character by character
 function automata.explode(source, delimiters)
 	local elements = {}
@@ -831,137 +797,140 @@ function automata.code2d_to_sb_and_nks(code2d)
 end
 -- Processing the form from the RC
 minetest.register_on_player_receive_fields(function(player, formname, fields)
-	print("fields submitted: "..dump(fields))
-	local pname = player:get_player_name()
-	-- recover the old tab to detect tab change later
-	local old_tab = automata.get_player_setting(pname, "tab")
-	-- always save any form fields
-	for k,v in next, fields do
-		automata.player_settings[pname][k] = v --we will preserve field entries exactly as entered 
-	end
-	automata.save_player_settings()
-	print(dump(automata.player_settings[pname]))--this has to be here for popups to work !!! @TODO WHY!?!?!
-	if formname == "automata:popup" then
-		if fields.exit == "Back" then
-			automata.show_rc_form(pname)
-			return true
+	if string.sub(formname, 1, 9) == "automata:" then
+		local wait = os.clock()
+		while os.clock() - wait < 0.05 do end --popups don't work without this see issue #30
+		--print("fields submitted: "..dump(fields))
+		local pname = player:get_player_name()
+		-- recover the old tab to detect tab change later
+		local old_tab = automata.get_player_setting(pname, "tab")
+		-- always save any form fields
+		for k,v in next, fields do
+			automata.player_settings[pname][k] = v --we will preserve field entries exactly as entered 
 		end
-	end
-	if formname == "automata:nks1d" then
-		if fields.exit == "Convert" then
-			local bits = {}
-			local code1d = 0
-			for b = 1, 8, 1 do
-				local bit = automata.player_settings[pname]["bit"..b]
-				if bit and bit == "true" then
-					code1d = code1d + ( 2 ^ ( b - 1) )
-				end
+		automata.save_player_settings()
+		if formname == "automata:popup" then
+			if fields.exit == "Back" then
+				automata.show_rc_form(pname)
+				return true
 			end
-			automata.player_settings[pname].code1d = code1d
-			automata.save_player_settings()
-			automata.show_rc_form(pname)
 		end
-		return true
-	end
-	if formname == "automata:nks2d" then
-		if fields.exit == "Convert" then
-			local nks = automata.player_settings[pname].nks
-			local survival = ""
-			local birth = ""
-			local code2d = ""
-			nks = tonumber(nks)
-			if nks and nks > 0 then
-				--convert the NKS code back to a survival / birth code
-				code2d = automata.toBits(nks)
-				for i=1,9,1 do
-					--birth
-					if code2d[i*2-1] == 1 then
-						birth = birth .. (i-1)
-					end
-					--survival
-					if code2d[i*2] == 1 then
-						survival = survival .. (i-1)
+		if formname == "automata:nks1d" then
+			if fields.exit == "Convert" then
+				local bits = {}
+				local code1d = 0
+				for b = 1, 8, 1 do
+					local bit = automata.player_settings[pname]["bit"..b]
+					if bit and bit == "true" then
+						code1d = code1d + ( 2 ^ ( b - 1) )
 					end
 				end
-				code2d = survival .. "/" .. birth
+				automata.player_settings[pname].code1d = code1d
+				automata.save_player_settings()
+				automata.show_rc_form(pname)
 			end
-			automata.player_settings[pname].code2d = code2d
-			automata.save_player_settings()
-			automata.show_rc_form(pname)
-		end
-		return true
-	end
-	--the main form
-	if formname == "automata:rc_form" then 
-		-- if any tab but 5 selected unlist the player as having tab5 open
-		if fields.quit or ( fields.tab ~= "5" and not fields.pid_id ) then 
-			automata.open_tab5[pname] = nil
-		end 
-		--detect tab change	
-		if old_tab and old_tab ~= automata.get_player_setting(pname, "tab") then
-			automata.show_rc_form(pname)
 			return true
-		end	
-		--if a lif was clicked show the popup form summary
-		if fields.lif_id then
-			automata.show_lif_summary(pname)
 		end
-		--if the pid_id click or double-click field is submitted, we pause or unpause the pattern
-		if fields.pid_id then
-			--translate the pid_id back to a pattern_id
-			local pid_id = string.sub(fields.pid_id, 5)
-			local pattern_id = automata.open_tab5[pname][tonumber(pid_id)] --this table is created in show_rcform() survives changes to patterns table
-			if string.sub(fields.pid_id, 1, 4) == "CHG:" and automata.patterns[pattern_id].status == "active" then
-				automata.grow_queue[pattern_id] = nil
-				automata.patterns[pattern_id].status = "paused"
-			elseif string.sub(fields.pid_id, 1, 4) == "DCL:" then
-				if automata.patterns[pattern_id].status == "paused" then
-					automata.patterns[pattern_id].status = "active"
-					automata.grow_queue[pattern_id] = { lock = false, last_grow=os.clock(), creator = pname,
-														size = automata.patterns[pattern_id].cell_count }
-				elseif automata.patterns[pattern_id].status == "finished" then
-					local add_gens = tonumber(fields.add_gens)
-					if add_gens then
-						add_gens = math.floor(add_gens)
-						automata.player_settings[pname][add_gens] = add_gens
-						automata.patterns[pattern_id].rules.gens = automata.patterns[pattern_id].rules.gens + add_gens
+		if formname == "automata:nks2d" then
+			if fields.exit == "Convert" then
+				local nks = automata.player_settings[pname].nks
+				local survival = ""
+				local birth = ""
+				local code2d = ""
+				nks = tonumber(nks)
+				if nks and nks > 0 then
+					--convert the NKS code back to a survival / birth code
+					code2d = automata.toBits(nks)
+					for i=1,9,1 do
+						--birth
+						if code2d[i*2-1] == 1 then
+							birth = birth .. (i-1)
+						end
+						--survival
+						if code2d[i*2] == 1 then
+							survival = survival .. (i-1)
+						end
+					end
+					code2d = survival .. "/" .. birth
+				end
+				automata.player_settings[pname].code2d = code2d
+				automata.save_player_settings()
+				automata.show_rc_form(pname)
+			end
+			return true
+		end
+		--the main form
+		if formname == "automata:rc_form" then 
+			-- if any tab but 5 selected unlist the player as having tab5 open
+			if fields.quit or ( fields.tab ~= "5" and not fields.pid_id ) then 
+				automata.open_tab5[pname] = nil
+			end 
+			--detect tab change	
+			if old_tab and old_tab ~= automata.get_player_setting(pname, "tab") then
+				automata.show_rc_form(pname)
+				return true
+			end	
+			--if a lif was clicked show the popup form summary
+			if fields.lif_id and string.sub(fields.lif_id, 1, 4) == "DCL:" then
+				automata.show_lif_summary(pname)
+			end
+			--if the pid_id click or double-click field is submitted, we pause or unpause the pattern
+			if fields.pid_id then
+				--translate the pid_id back to a pattern_id
+				local pid_id = string.sub(fields.pid_id, 5)
+				local pattern_id = automata.open_tab5[pname][tonumber(pid_id)] --this table is created in show_rcform() survives changes to patterns table
+				if string.sub(fields.pid_id, 1, 4) == "CHG:" and automata.patterns[pattern_id].status == "active" then
+					automata.grow_queue[pattern_id] = nil
+					automata.patterns[pattern_id].status = "paused"
+				elseif string.sub(fields.pid_id, 1, 4) == "DCL:" then
+					if automata.patterns[pattern_id].status == "paused" then
+						automata.patterns[pattern_id].status = "active"
 						automata.grow_queue[pattern_id] = { lock = false, last_grow=os.clock(), creator = pname,
 															size = automata.patterns[pattern_id].cell_count }
-					else automata.show_popup(pname, "Add gens field must be a number")
+					elseif automata.patterns[pattern_id].status == "finished" then
+						local add_gens = tonumber(fields.add_gens)
+						if add_gens then
+							add_gens = math.floor(add_gens)
+							automata.player_settings[pname][add_gens] = add_gens
+							automata.patterns[pattern_id].rules.gens = automata.patterns[pattern_id].rules.gens + add_gens
+							automata.grow_queue[pattern_id] = { lock = false, last_grow=os.clock(), creator = pname,
+																size = automata.patterns[pattern_id].cell_count }
+						else automata.show_popup(pname, "Add gens field must be a number")
+						end
 					end
 				end
-			end
-			--update the form
-			automata.show_rc_form(pname)
-			return true
-		end
-		--actual form submissions
-		if fields.exit == "Activate" then
-			if automata.new_pattern(pname) then
-				automata.inactive_cells = {} --reset the inactive cell lsit
-				minetest.chat_send_player(pname, "You activated all inactive cells!")
+				--update the form
+				automata.show_rc_form(pname)
 				return true
 			end
-		elseif fields.exit == "Import" then
-			if automata.import_lif(pname) then
-				minetest.chat_send_player(pname, "You imported a LIF to your current location!")
+			--actual form submissions
+			if fields.exit == "Activate" then
+				if automata.new_pattern(pname) then
+					automata.inactive_cells = {} --reset the inactive cell lsit
+					minetest.chat_send_player(pname, "You activated all inactive cells!")
+					return true
+				end
+			elseif fields.exit == "Import" then
+				if automata.import_lif(pname) then
+					minetest.chat_send_player(pname, "You imported a LIF to your current location!")
+					return true
+				end
+			elseif fields.exit == "Single" then
+				if automata.singlenode(pname) then
+					minetest.chat_send_player(pname, "You started a single cell at your current location!")
+					return true
+				end
+			elseif fields.exit == "NKS Code" then
+				automata.nks_code2d_popup(pname)
+				return true
+			elseif fields.exit == "8 Rules" then
+				automata.explicit_rules1d_popup(pname)
 				return true
 			end
-		elseif fields.exit == "Single" then
-			if automata.singlenode(pname) then
-				minetest.chat_send_player(pname, "You started a single cell at your current location!")
-				return true
-			end
-		elseif fields.exit == "NKS Code" then
-			automata.nks_code2d_popup(pname)
-			return true
-		elseif fields.exit == "8 Rules" then
-			automata.explicit_rules1d_popup(pname)
 			return true
 		end
 		return true
 	end
-	return true
 end)
 --the formspecs and related settings and functions / selected field variables
 automata.player_settings = {} --per player form persistence
@@ -1292,16 +1261,23 @@ function automata.show_lif_summary(pname)
 	local count = 0
 	local byte_char = string.byte("*")
 	if liffile then
+		local title = ""
+		local desc = ""
+		local ruleset = ""
+		local i = 1
 		for line in liffile:lines() do
 			--minetest.log("action", "line: "..line)
 			if string.sub(line, 1,2) == "#D" then
-				message = message .. string.sub(line, 4).."\n"
+				if i == 1 then title = string.sub(line, 4).."\n" else
+				desc = desc .. string.sub(line, 4).."\n"
+				end
+				i = i+1
 			end
 			if string.sub(line, 1,2) == "#N" then
-				message = message .. "Standard Rules: 23/3 \n"
+				ruleset = "Standard Rules: 23/3"
 			end
 			if string.sub(line, 1,2) == "#R" then
-				message = message .. "Non-standard Rules: " .. string.sub(line, 4).."\n"
+				ruleset = "Non-standard Rules: " .. string.sub(line, 4)
 			end
 			if string.sub(line, 1,1) ~= "#" then
 				-- count all the cells
@@ -1313,13 +1289,13 @@ function automata.show_lif_summary(pname)
 			end
 		end
 		if count then
-			message = message .. "This pattern has " .. count .. "cells in it."
+			message = title .. "This pattern has " .. count .. ". " .. ruleset .. desc
 		end
 	end
 	minetest.show_formspec(pname, "automata:popup",
 								"size[10,8]" ..
-								"button_exit[1,1;2,1;exit;Back]"..
-								"label[1,3;"..minetest.formspec_escape(message).."]"
+								"button_exit[0.5,0.1;2,1;exit;Back]"..
+								"label[1,1;"..minetest.formspec_escape(message).."]"
 	)
 end
 -- this is the form-error popup
