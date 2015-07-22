@@ -37,13 +37,28 @@ If worldedit is installed, this mod adds a chat command, "//owncells" which allo
 
 ## Known Issues
 - Large patterns (particularly 3D patterns, can cause serious lag)
+- zero-neighbor birth rules ( odd numbered NKS codes ) are implemented for cells inside the pattern's rectangular extent, not, obviously, for the entire infinite field. ways of faking this might be addressed in future releases but it is disclosed here that this implementation will have a unique effect on such rules' patterns compared to software that assumes an infinite field for each iteration...
 
-## Next Steps in Development (for v.0.1.0 milestone)
+## Next Steps in Development (for v.0.2.0 milestone)
 - importing from a larger library of saved patterns (.rle, .cells and .lif v1.06 support) http://conwaylife.com/wiki/Main_Page and showing a summary in the form
-- an "Admin" tab visible to players with the 'automata' priv to modify default settings
-- an anti-cell which could be used to implement 0-neighbor birth rules within defined extent
+- an "Admin" tab visible to ops
+- a priv for using this mod at all, or using destructive mode at least
+- improve import / export / persistence functionality
+- detection of dead (stable) patterns or sections of patterns
+- other efficiency improvements to make calculations go faster
+
+- non-totalistic rules for 2D and 3D where exact combinations of neighbors can be specified (ambitious)
+- neighborhoods of depth greater than 1, as well as definable neighborhood shapes
+- wireworld automata
+- continuous automata and colorized automata
+- zero neighbor birth rules applied to the entire "infinite field" rather than current approach
+- cells that can change their own rules or use different rules give iteration number
+- automata based on foldings, transformations, scale-repetitions, etc
 
 For other known issues and planned improvements see: https://github.com/bobombolo/automata/issues
+
+##New since v.0.0.9
+- zero-neighbor-birth is now supported within the extent of the pattern (not in the infinite field, alas)
 
 ##New since v.0.0.8
 - added chat command "//owncells" for activating automata blocks created by worldedit or reactivating cells orphaned by quit/crash (addresses import/export, persistence, cleanup of orphaned cells)

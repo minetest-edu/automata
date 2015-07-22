@@ -1,3 +1,9 @@
+-- AUTOMATA mod for Minetest 4.12+
+-- this is version 0.1.0 (released 21july2015)
+-- source: github.com/bobombolo/automata
+-- depends: WorldEdit mod if you want to use chat command //owncells
+-- written by bobomb (find me on the forum.minetest.net)
+-- license: WTFPL
 automata = {}
 automata.patterns = {} -- master pattern list
 automata.grow_queue = {}
@@ -245,6 +251,8 @@ function automata.grow(pattern_id, pname)
 		e = 1
 		rules.grow_distance = 0
 	else e = math.abs(rules.grow_distance) end
+	local code1d
+	if rules.neighbors == 2 then code1d = automata.toBits(rules.code1d, 8) end
 	local old_pmin = automata.patterns[pattern_id].pmin
 	local old_pmax = automata.patterns[pattern_id].pmax
 	local new_emin, new_emax = vm:read_from_map({x=old_pmin.x-e, y=old_pmin.y-e, z=old_pmin.z-e},
@@ -261,7 +269,20 @@ function automata.grow(pattern_id, pname)
 	local old_ystride = old_emax.y-old_emin.y+1
 	--load the cell list from last iteration
 	local old_indexes = automata.patterns[pattern_id].indexes
-	
+	local zeroNbirth = false
+	local zero_ns = {}
+	local old_area
+	-- if zero neighbor birth rule set then build up the zero neighbor list
+	if ( rules.neighbors > 2 and rules.birth[0] ) or ( code1d and code1d[1] ) then 
+		zeroNbirth = true
+		old_area = VoxelArea:new({MinEdge=old_emin, MaxEdge=old_emax})
+		for i in old_area:iterp(old_pmin, old_pmax) do
+			zero_ns[i] = true
+		end
+		for vi, pos in next, old_indexes do
+			zero_ns[vi] = nil
+		end
+	end
 	--simple function that adds a position to new_indexes, detects a new pmin and/or pmax, count+1
 	local function add_to_new_cell_list(vi, p)
 		new_indexes[vi] = p
@@ -384,7 +405,6 @@ function automata.grow(pattern_id, pname)
 		local new_pos_vi = new_area:indexp(pos)
 		--CELL SURVIVAL TESTING: non-totalistic rules (ie, 1D)
 		if rules.neighbors == 2 then
-			local code1d = automata.toBits(rules.code1d, 8) --rules 3,4,7,8 apply to already-on cells
 			local plus, minus
 			--test the plus neighbor
 			local pluspos_vi  = old_pos_vi + neighborhood_vis.plus
@@ -447,12 +467,29 @@ function automata.grow(pattern_id, pname)
 			death_list[new_pos_vi] = pos
 		end
 	end
-	--CELL BIRTH TESTING: tests all empty_neighbors against rules.birth or code1d[1,2,5,6]
+	--CELL BIRTH TESTING:
+	-- all guaranteed zero-neighbor cells give birth if zero-n birth is active
+	if zeroNbirth then
+		-- remove neighbors we know to be empty but have an active cell neighbor
+		for vi, p in next, empty_neighbors do
+			zero_ns[vi] = nil
+		end
+		-- turn on all the remaining cells that have zero neighbors
+		for vi in next, zero_ns do
+			local epos = old_area:position(vi)
+			--only if birth happens convert old_index to new_index
+			local new_epos_vi = new_area:indexp(epos)
+			--add to birth list
+			local bpos_vi = new_epos_vi + growth_vi
+			local bpos = {x=epos.x+growth_offset.x, y=epos.y+growth_offset.y, z=epos.z+growth_offset.z}
+			birth_list[bpos_vi] = bpos --when node is actually set we will add to new_indexes
+		end
+	end
+	-- tests all empty_neighbors against remaining rules.birth or code1d[2,5,6]
 	for epos_vi, epos in next, empty_neighbors do
 		local birth = false
 		--CELL BIRTH TESTING: non-totalistic rules (ie. 1D)
 		if rules.neighbors == 2 then
-			local code1d = automata.toBits(rules.code1d, 8) --rules 1,2,5,6 apply to already-on cells
 			local plus, minus
 			--test the plus neighbor
 			local pluspos_vi  = epos_vi + neighborhood_vis.plus
