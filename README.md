@@ -1,14 +1,14 @@
 # automata v.0.1.0
 ### A minetest mod for growing various cellular automata, including conway's game of life...
 
-## Installation
+### Installation
 like any minetest mod just install the mod as "automata" in your mods folder
 
-## What it Adds
-### 2 Node types, 1 Tool, 1 Chat command
+### What it Adds
+2 Node types, 1 Tool, 1 Chat command
 
-## Depends on
-### Nothing, optionally depends on WorldEdit in order to use chat command "//owncells ( see https://github.com/Uberi/Minetest-WorldEdit )
+### Depends on
+Nothing, optionally depends on WorldEdit in order to use chat command "//owncells ( see https://github.com/Uberi/Minetest-WorldEdit )
 
 This mod provides a "Programmable" Cellular Automata block (Inactive Cell) which you place, then you select the Remote Control tool and punch it to bring up the activation form. Once activated, Inactive Cells become Active Cells and start growing according to the rules you've set. Active Cells turn into Inactive Cells when dug. 
 
