@@ -268,6 +268,8 @@ function automata.grow(pattern_id, pname)
 	--pull the old values which will make the indexes valid
 	local old_emin = automata.patterns[pattern_id].emin
 	local old_emax = automata.patterns[pattern_id].emax
+	local same_extent = false
+	if old_emin == new_emin and old_emax == new_emax then same_extent = true end
 	local old_xstride = old_emax.x-old_emin.x+1
 	local old_ystride = old_emax.y-old_emin.y+1
 	--load the cell list from last iteration
@@ -278,7 +280,11 @@ function automata.grow(pattern_id, pname)
 	-- if zero neighbor birth rule set then build up the zero neighbor list
 	if ( rules.neighbors > 2 and rules.birth[0] ) or ( code1d and code1d[1] == 1) then 
 		zeroNbirth = true
-		old_area = VoxelArea:new({MinEdge=old_emin, MaxEdge=old_emax})
+		if same_extent then
+			old_area = new_area
+		else
+			old_area = VoxelArea:new({MinEdge=old_emin, MaxEdge=old_emax})
+		end
 		for i in old_area:iterp(old_pmin, old_pmax) do
 			zero_ns[i] = true
 		end
@@ -405,7 +411,12 @@ function automata.grow(pattern_id, pname)
 	for old_pos_vi, pos in next, old_indexes do		
 		local survival = false
 		--we need to convert the old index to the new index regardless of survival/death
-		local new_pos_vi = new_area:indexp(pos)
+		local new_pos_vi
+		if same_extent then
+			new_pos_vi = old_pos_vi
+		else	
+			new_pos_vi = new_area:indexp(pos)
+		end	
 		--CELL SURVIVAL TESTING: non-totalistic rules (ie, 1D)
 		if rules.neighbors == 2 then
 			local plus, minus
@@ -525,7 +536,12 @@ function automata.grow(pattern_id, pname)
 		end
 		if birth then
 			--only if birth happens convert old_index to new_index
-			local new_epos_vi = new_area:indexp(epos)
+			local new_epos_vi
+			if same_extent then
+				new_epos_vi = epos_vi
+			else
+				new_epos_vi = new_area:indexp(epos)
+			end
 			--add to birth list
 			local bpos_vi = new_epos_vi + growth_vi
 			local bpos = {x=epos.x+growth_offset.x, y=epos.y+growth_offset.y, z=epos.z+growth_offset.z}
